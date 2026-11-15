@@ -110,8 +110,9 @@ class MainActivity : ComponentActivity() {
             android.util.Log.e("VíaAlerta", "MapLibre init error: ${t.message}")
         }
 
-        voiceCopilotManager = VoiceCopilotManager(this)
-        locationRadarManager = LocationRadarManager(this, voiceCopilotManager)
+        voiceCopilotManager = com.example.util.ViaAlertaRadarHolder.getVoiceCopilotManager(this)
+        locationRadarManager = com.example.util.ViaAlertaRadarHolder.getLocationRadarManager(this)
+        com.example.util.ViaAlertaRadarHolder.ensureDefaultCallbacks(this)
         setupBluetoothSteeringMediaSession()
 
         // Request location permissions and detect real-time GPS position instantly on app launch
@@ -189,16 +190,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::voiceCopilotManager.isInitialized) {
+            voiceCopilotManager.resumeHandsFreeIfActive()
+        }
+        val hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (hasFine && Firebase.auth.currentUser != null) {
+            com.example.util.RoadRadarForegroundService.start(this)
+        }
+    }
+
     override fun onPause() {
         super.onPause()
-        if (!voiceCopilotManager.isHandsFreeLoop.value) {
+        if (!voiceCopilotManager.isHandsFreeLoop.value &&
+            !com.example.util.ViaAlertaRadarHolder.isForegroundServiceRunning.value
+        ) {
             voiceCopilotManager.stopListening()
         }
     }
 
     override fun onStop() {
         super.onStop()
-        if (!voiceCopilotManager.isHandsFreeLoop.value) {
+        if (!voiceCopilotManager.isHandsFreeLoop.value &&
+            !com.example.util.ViaAlertaRadarHolder.isForegroundServiceRunning.value
+        ) {
             voiceCopilotManager.stopListening()
         }
     }
@@ -208,7 +225,10 @@ class MainActivity : ComponentActivity() {
         try {
             mediaSession?.release()
         } catch (_: Throwable) {}
-        voiceCopilotManager.destroy()
+        // Keep shared TTS & radar alive while foreground service is monitoring off-app / screen-off
+        if (!com.example.util.ViaAlertaRadarHolder.isForegroundServiceRunning.value) {
+            com.example.util.ViaAlertaRadarHolder.shutdown()
+        }
     }
 }
 
@@ -270,7 +290,7 @@ fun AppContent(
                 onRequestGoogleLogin = { isGuestMode = false },
                 onSignOutClicked = {
                     com.example.util.RoadRadarForegroundService.stop(context)
-                    locationRadarManager.stopContinuousTracking()
+                    com.example.util.ViaAlertaRadarHolder.shutdown()
                     isGuestMode = false
                     signOut(
                         credentialManager = credentialManager,
@@ -418,6 +438,7 @@ fun MainScaffold(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted && !isGuestMode) {
+            com.example.util.RoadRadarForegroundService.start(context)
             voiceCopilotManager.startListening()
         }
     }

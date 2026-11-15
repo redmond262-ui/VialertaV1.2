@@ -31,24 +31,35 @@ sealed class PendingVoicePrompt {
 
 class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitListener {
 
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val appContext = context.applicationContext
+    private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
     private var speechRecognizer: SpeechRecognizer? = null
     private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasLegacyAudioFocus = false
+
+    private val activeUtteranceIds = mutableSetOf<String>()
+
+    private val abandonFocusWatchdog = Runnable {
+        Log.d("VoiceCopilot", "AudioFocus watchdog restoring background media audio.")
+        activeUtteranceIds.clear()
+        isTtsSpeaking = false
+        abandonSpeechAudioFocus()
+    }
 
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
-    private val _isHandsFreeLoop = MutableStateFlow(DriverPreferences.isHandsFreeLoopEnabled(context))
+    private val _isHandsFreeLoop = MutableStateFlow(DriverPreferences.isHandsFreeLoopEnabled(appContext))
     val isHandsFreeLoop: StateFlow<Boolean> = _isHandsFreeLoop.asStateFlow()
 
     private val _lastRecognizedText = MutableStateFlow("")
     val lastRecognizedText: StateFlow<String> = _lastRecognizedText.asStateFlow()
 
-    private val _copilotStatusMessage = MutableStateFlow("Toca el micrófono para dar un comando por voz")
+    private val _copilotStatusMessage = MutableStateFlow("Tocá el micrófono para dar un comando por voz")
     val copilotStatusMessage: StateFlow<String> = _copilotStatusMessage.asStateFlow()
 
     // Captures exact T0 when user started speaking/tapping so GPS compensation lands right on hazard
@@ -64,12 +75,13 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
     private var isTtsSpeaking = false
     private var useDeviceLocaleFallback = false
     private var pendingPrompt: PendingVoicePrompt? = null
+    private var undoExpiresAtMillis: Long = 0L
     private var listenAfterUtteranceId: String? = null
     private var restartRunnable: Runnable? = null
 
     init {
         try {
-            tts = TextToSpeech(context.applicationContext, this)
+            tts = TextToSpeech(appContext, this)
         } catch (t: Throwable) {
             Log.e("VoiceCopilot", "Error initializing TextToSpeech: ${t.message}")
         }
@@ -91,28 +103,35 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
 
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
-                        isTtsSpeaking = true
-                    }
-
-                    override fun onDone(utteranceId: String?) {
-                        isTtsSpeaking = false
-                        abandonSpeechAudioFocus()
-                        if (utteranceId != null && utteranceId == listenAfterUtteranceId) {
-                            listenAfterUtteranceId = null
-                            mainHandler.postDelayed({
-                                if (!_isListening.value && !isTtsSpeaking) {
-                                    internalStartListening(isAutoFollowUp = true)
-                                }
-                            }, 220L)
-                        } else if (_isHandsFreeLoop.value && !_isListening.value) {
-                            scheduleHandsFreeRelisten(900L)
+                        mainHandler.post {
+                            isTtsSpeaking = true
+                            utteranceId?.let { activeUtteranceIds.add(it) }
                         }
                     }
 
+                    override fun onDone(utteranceId: String?) {
+                        mainHandler.post {
+                            handleUtteranceFinished(utteranceId, interrupted = false)
+                        }
+                    }
+
+                    @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
-                        isTtsSpeaking = false
-                        abandonSpeechAudioFocus()
-                        listenAfterUtteranceId = null
+                        mainHandler.post {
+                            handleUtteranceFinished(utteranceId, interrupted = false)
+                        }
+                    }
+
+                    override fun onError(utteranceId: String?, errorCode: Int) {
+                        mainHandler.post {
+                            handleUtteranceFinished(utteranceId, interrupted = false)
+                        }
+                    }
+
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                        mainHandler.post {
+                            handleUtteranceFinished(utteranceId, interrupted = interrupted)
+                        }
                     }
                 })
 
@@ -125,19 +144,56 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         }
     }
 
-    fun setHandsFreeLoopEnabled(enabled: Boolean) {
-        _isHandsFreeLoop.value = enabled
-        DriverPreferences.setHandsFreeLoopEnabled(context, enabled)
-        cancelPendingRestart()
-        if (enabled) {
-            speak("Copiloto manos libres activado. Podés hablar en cualquier momento.", isWarning = false)
+    private fun handleUtteranceFinished(utteranceId: String?, interrupted: Boolean) {
+        if (utteranceId != null) {
+            activeUtteranceIds.remove(utteranceId)
+        } else {
+            activeUtteranceIds.clear()
+        }
+
+        val shouldFollowUp = !interrupted && utteranceId != null && utteranceId == listenAfterUtteranceId
+        if (utteranceId != null && utteranceId == listenAfterUtteranceId) {
+            listenAfterUtteranceId = null
+        }
+
+        if (activeUtteranceIds.isEmpty()) {
+            isTtsSpeaking = false
+            abandonSpeechAudioFocus()
+        }
+
+        if (shouldFollowUp) {
+            if (pendingPrompt is PendingVoicePrompt.UndoRecentAlert) {
+                // Give driver full 14 seconds AFTER warning finishes speaking
+                undoExpiresAtMillis = System.currentTimeMillis() + 14_000L
+            }
             mainHandler.postDelayed({
-                if (_isHandsFreeLoop.value && !isTtsSpeaking && !_isListening.value) {
+                if (!_isListening.value && !isTtsSpeaking) {
                     internalStartListening(isAutoFollowUp = true)
                 }
-            }, 1800L)
+            }, 220L)
+        } else if (_isHandsFreeLoop.value && !_isListening.value && !isTtsSpeaking && listenAfterUtteranceId == null) {
+            scheduleHandsFreeRelisten(900L)
+        }
+    }
+
+    fun setHandsFreeLoopEnabled(enabled: Boolean) {
+        _isHandsFreeLoop.value = enabled
+        DriverPreferences.setHandsFreeLoopEnabled(appContext, enabled)
+        cancelPendingRestart()
+        if (enabled) {
+            speak(
+                "Copiloto manos libres activado. Podés hablar en cualquier momento.",
+                isWarning = false,
+                listenImmediatelyAfter = true
+            )
         } else {
             stopListening()
+        }
+    }
+
+    fun resumeHandsFreeIfActive() {
+        if (_isHandsFreeLoop.value && !_isListening.value && !isTtsSpeaking) {
+            scheduleHandsFreeRelisten(650L)
         }
     }
 
@@ -147,13 +203,20 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
     }
 
     fun registerRecentAlertForVoiceUndo(alertId: String, label: String) {
-        pendingPrompt = PendingVoicePrompt.UndoRecentAlert(alertId, label)
-        mainHandler.postDelayed({
-            val current = pendingPrompt
-            if (current is PendingVoicePrompt.UndoRecentAlert && current.alertId == alertId) {
-                pendingPrompt = null
-            }
-        }, 7000L)
+        mainHandler.post {
+            pendingPrompt = PendingVoicePrompt.UndoRecentAlert(alertId, label)
+            val windowMs = 15_000L
+            undoExpiresAtMillis = System.currentTimeMillis() + windowMs
+            mainHandler.postDelayed({
+                val current = pendingPrompt
+                if (current is PendingVoicePrompt.UndoRecentAlert &&
+                    current.alertId == alertId &&
+                    System.currentTimeMillis() >= undoExpiresAtMillis
+                ) {
+                    pendingPrompt = null
+                }
+            }, windowMs + 500L)
+        }
     }
 
     private fun cancelPendingRestart() {
@@ -176,23 +239,33 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
     private fun requestSpeechAudioFocus() {
         try {
             if (audioManager == null) return
+            mainHandler.removeCallbacks(abandonFocusWatchdog)
+            mainHandler.postDelayed(abandonFocusWatchdog, 14_000L)
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val playbackAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-                audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                    .setAudioAttributes(playbackAttributes)
-                    .setAcceptsDelayedFocusGain(false)
-                    .build()
-                audioManager.requestAudioFocus(audioFocusRequest!!)
-            } else {
+                // Only request once while actively ducking; never overwrite an un-abandoned request
+                if (audioFocusRequest == null) {
+                    val playbackAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                    val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                        .setAudioAttributes(playbackAttributes)
+                        .setAcceptsDelayedFocusGain(false)
+                        .build()
+                    val res = audioManager.requestAudioFocus(request)
+                    if (res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED || res == AudioManager.AUDIOFOCUS_REQUEST_DELAYED) {
+                        audioFocusRequest = request
+                    }
+                }
+            } else if (!hasLegacyAudioFocus) {
                 @Suppress("DEPRECATION")
-                audioManager.requestAudioFocus(
+                val res = audioManager.requestAudioFocus(
                     null,
-                    AudioManager.STREAM_NOTIFICATION,
+                    AudioManager.STREAM_MUSIC,
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
                 )
+                hasLegacyAudioFocus = (res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
             }
         } catch (t: Throwable) {
             Log.w("VoiceCopilot", "Error requesting audio focus: ${t.message}")
@@ -201,20 +274,29 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
 
     private fun abandonSpeechAudioFocus() {
         try {
+            mainHandler.removeCallbacks(abandonFocusWatchdog)
             if (audioManager == null) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-                audioFocusRequest = null
-            } else {
+                audioFocusRequest?.let { req ->
+                    audioManager.abandonAudioFocusRequest(req)
+                    audioFocusRequest = null
+                }
+            } else if (hasLegacyAudioFocus) {
                 @Suppress("DEPRECATION")
                 audioManager.abandonAudioFocus(null)
+                hasLegacyAudioFocus = false
             }
         } catch (t: Throwable) {
             Log.w("VoiceCopilot", "Error abandoning audio focus: ${t.message}")
         }
     }
 
-    fun speak(text: String, isWarning: Boolean = false, listenImmediatelyAfter: Boolean = false) {
+    fun speak(
+        text: String,
+        isWarning: Boolean = false,
+        listenImmediatelyAfter: Boolean = false,
+        queueIfSpeaking: Boolean = false
+    ) {
         if (isMuted) return
         if (isWarning) {
             playWarningBeep()
@@ -228,13 +310,38 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                         _isListening.value = false
                     }
                     requestSpeechAudioFocus()
-                    val utteranceId = "viaalerta_tts_${System.currentTimeMillis()}"
-                    listenAfterUtteranceId = if (listenImmediatelyAfter) utteranceId else null
-                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+                    val utteranceId = "viaalerta_tts_${System.currentTimeMillis()}_${activeUtteranceIds.size}"
+                    val useAddQueue = queueIfSpeaking && isTtsSpeaking
+                    if (!useAddQueue) {
+                        activeUtteranceIds.clear()
+                    }
+                    activeUtteranceIds.add(utteranceId)
+                    if (listenImmediatelyAfter) {
+                        listenAfterUtteranceId = utteranceId
+                    } else if (!useAddQueue) {
+                        listenAfterUtteranceId = null
+                    }
+                    val queueMode = if (useAddQueue) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH
+                    val result = tts?.speak(text, queueMode, null, utteranceId)
+                    if (result != TextToSpeech.SUCCESS) {
+                        activeUtteranceIds.remove(utteranceId)
+                        if (activeUtteranceIds.isEmpty()) {
+                            isTtsSpeaking = false
+                            abandonSpeechAudioFocus()
+                        }
+                        if (listenImmediatelyAfter) {
+                            listenAfterUtteranceId = null
+                            internalStartListening(isAutoFollowUp = true)
+                        }
+                    }
+                } else if (listenImmediatelyAfter) {
+                    mainHandler.postDelayed({ internalStartListening(isAutoFollowUp = true) }, 250L)
                 }
             } catch (t: Throwable) {
                 Log.w("VoiceCopilot", "TTS speak failed: ${t.message}")
                 listenAfterUtteranceId = null
+                activeUtteranceIds.clear()
+                isTtsSpeaking = false
                 abandonSpeechAudioFocus()
             }
         }
@@ -242,7 +349,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
 
     fun playWarningBeep() {
         try {
-            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            val vibrator = appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator?.vibrate(VibrationEffect.createOneShot(180, VibrationEffect.DEFAULT_AMPLITUDE))
             } else {
@@ -264,7 +371,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
 
     private fun internalStartListening(isAutoFollowUp: Boolean) {
         val hasAudioPermission = androidx.core.content.ContextCompat.checkSelfPermission(
-            context,
+            appContext,
             android.Manifest.permission.RECORD_AUDIO
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
@@ -275,7 +382,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         }
 
         try {
-            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            if (!SpeechRecognizer.isRecognitionAvailable(appContext)) {
                 _copilotStatusMessage.value = "Servicio de voz de Google no disponible en este dispositivo."
                 _isListening.value = false
                 return
@@ -289,20 +396,29 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         cleanupSpeechRecognizer()
 
         try {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(appContext).apply {
                 setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {
                         _isListening.value = true
-                        lastSpeechAnchorMillis = System.currentTimeMillis()
-                        _copilotStatusMessage.value = if (pendingPrompt != null) {
-                            "🎙️ Esperando respuesta ('sí', 'no', 'cancelar')..."
-                        } else {
-                            "🎙️ Escuchando... Di 'bache', 'control', 'agua', 'obras'..."
+                        if (!isAutoFollowUp) {
+                            lastSpeechAnchorMillis = System.currentTimeMillis()
+                        }
+                        val activePrompt = pendingPrompt
+                        _copilotStatusMessage.value = when (activePrompt) {
+                            is PendingVoicePrompt.UndoRecentAlert ->
+                                "🎙️ Decí 'cancelar' si fue un error..."
+                            is PendingVoicePrompt.ConfirmPassOverAlert,
+                            is PendingVoicePrompt.ConfirmShakeImpact ->
+                                "🎙️ Esperando respuesta ('sí', 'no', 'central')..."
+                            null ->
+                                "🎙️ Escuchando... Di 'bache', 'control', 'agua', 'obras'..."
                         }
                     }
 
                     override fun onBeginningOfSpeech() {
-                        lastSpeechAnchorMillis = System.currentTimeMillis()
+                        if (!isAutoFollowUp) {
+                            lastSpeechAnchorMillis = System.currentTimeMillis()
+                        }
                         _copilotStatusMessage.value = "Escuchando comando..."
                     }
 
@@ -328,7 +444,15 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                         }
 
                         if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                            pendingPrompt = null
+                            val currentPrompt = pendingPrompt
+                            if (currentPrompt is PendingVoicePrompt.UndoRecentAlert) {
+                                // Only expire UndoRecentAlert once its full 14s window elapsed
+                                if (System.currentTimeMillis() >= undoExpiresAtMillis) {
+                                    pendingPrompt = null
+                                }
+                            } else {
+                                pendingPrompt = null
+                            }
                         }
 
                         _copilotStatusMessage.value = when (error) {
@@ -343,8 +467,11 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                             else -> "Tocá el micrófono para dar un comando"
                         }
 
-                        if (_isHandsFreeLoop.value && error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
-                            scheduleHandsFreeRelisten(if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1400L else 850L)
+                        // On transient busy/audio errors, avoid aggressive loop if OS blocks mic in background
+                        val osRestrictedMic = error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ||
+                            error == SpeechRecognizer.ERROR_AUDIO
+                        if (_isHandsFreeLoop.value && !osRestrictedMic) {
+                            scheduleHandsFreeRelisten(if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1600L else 950L)
                         }
                     }
 
@@ -354,9 +481,9 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                         cleanupSpeechRecognizer()
 
                         if (!matches.isNullOrEmpty()) {
-                            val spoken = matches[0].lowercase().trim()
-                            _lastRecognizedText.value = spoken
-                            processSpokenCommand(spoken)
+                            val primary = matches[0].lowercase().trim()
+                            _lastRecognizedText.value = primary
+                            processSpokenCandidates(matches)
                         } else {
                             _copilotStatusMessage.value = "No se entendió el audio. Probá de nuevo."
                             if (_isHandsFreeLoop.value) scheduleHandsFreeRelisten(900L)
@@ -384,10 +511,16 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
                 }
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
-                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    if (isAutoFollowUp) 2200L else 1600L
+                )
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    if (isAutoFollowUp) 1700L else 1250L
+                )
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, appContext.packageName)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             }
 
             speechRecognizer?.startListening(intent)
@@ -405,7 +538,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         mainHandler.post {
             _isListening.value = false
             cleanupSpeechRecognizer()
-            _copilotStatusMessage.value = "Toca el micrófono para hablar"
+            _copilotStatusMessage.value = "Tocá el micrófono para hablar"
         }
     }
 
@@ -420,33 +553,45 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         speechRecognizer = null
     }
 
-    private fun processSpokenCommand(spokenText: String) {
-        val text = spokenText.lowercase().trim()
+    private fun processSpokenCandidates(rawCandidates: List<String>) {
+        val normalized = rawCandidates.map { normalizeSpeech(it) }.filter { it.isNotBlank() }
+        if (normalized.isEmpty()) return
+        val combinedText = normalized.joinToString(" | ")
+        val primaryText = normalized.first()
         val activePrompt = pendingPrompt
 
-        // 1. Handle contextual conversational questions first (zero screen touches!)
+        // 1. Handle contextual conversational questions first (check ALL recognizer hypotheses!)
         if (activePrompt != null) {
-            val isYes = text.contains("sí") || text.contains("si ") || text == "si" ||
-                text.contains("sigue") || text.contains("afirmativo") || text.contains("confirmo") ||
-                text.contains("correcto") || text.contains("claro") || text.contains("central")
-            val isNo = text.contains("no ") || text == "no" || text.contains("cancel") ||
-                text.contains("error") || text.contains("taparon") || text.contains("falsa") ||
-                text.contains("ya no") || text.contains("anular") || text.contains("borrar")
+            val isYes = normalized.any { t ->
+                t == "si" || t.startsWith("si ") || t.contains(" si ") ||
+                    t.contains("sigue") || t.contains("afirmativo") || t.contains("confirmo") ||
+                    t.contains("correcto") || t.contains("claro") || t.contains("central")
+            }
+            val isUndo = isUndoSpeechCommand(rawCandidates)
+            val isNo = normalized.any { t ->
+                t == "no" || t.startsWith("no ") || t.contains(" no ") ||
+                    t.contains("taparon") || t.contains("ya no")
+            } || isUndo
 
             when (activePrompt) {
                 is PendingVoicePrompt.UndoRecentAlert -> {
-                    if (isNo || text.contains("deshacer")) {
+                    if (isUndo) {
                         pendingPrompt = null
+                        undoExpiresAtMillis = 0L
                         speak("Cancelado, eliminando alerta recién publicada.", isWarning = false)
                         _copilotStatusMessage.value = "Alerta cancelada por voz"
                         onCancelAlertCommand?.invoke(activePrompt.alertId)
                         return
                     }
+                    // If user didn't say cancel (say, spoke a new hazard command), expire undo and process new command
+                    if (System.currentTimeMillis() >= undoExpiresAtMillis) {
+                        pendingPrompt = null
+                    }
                 }
                 is PendingVoicePrompt.ConfirmShakeImpact -> {
                     pendingPrompt = null
                     if (isYes) {
-                        val isCentral = text.contains("central") || text.contains("ambos")
+                        val isCentral = combinedText.contains("central") || combinedText.contains("ambos")
                         speak("Pozo confirmado en el punto exacto del golpe.", isWarning = true)
                         _copilotStatusMessage.value = "¡Pozo confirmado por impacto!"
                         onShakePotholeDecision?.invoke(activePrompt.lat, activePrompt.lng, activePrompt.heading, isCentral)
@@ -475,103 +620,127 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             }
         }
 
-        // 2. Standard natural-language driving commands
+        // Fallback undo if user spoke "cancelar" cleanly right after creating an alert
+        val undoPrompt = pendingPrompt as? PendingVoicePrompt.UndoRecentAlert
+        if (undoPrompt != null && isUndoSpeechCommand(rawCandidates)) {
+            pendingPrompt = null
+            undoExpiresAtMillis = 0L
+            speak("Cancelado, eliminando alerta recién publicada.", isWarning = false)
+            _copilotStatusMessage.value = "Alerta cancelada por voz"
+            onCancelAlertCommand?.invoke(undoPrompt.alertId)
+            return
+        }
+
+        // 2. Standard natural-language driving commands (checked across primary & fallback hypotheses)
         val anchor = lastSpeechAnchorMillis
+        val matchText = normalized.firstOrNull { cand ->
+            cand.contains("pozo") || cand.contains("bache") || cand.contains("crater") || cand.contains("hueco") ||
+                cand.contains("polic") || cand.contains("radar") || cand.contains("control") ||
+                cand.contains("trabajo") || cand.contains("obra") || cand.contains("corte") || cand.contains("desvio") ||
+                cand.contains("agua") || cand.contains("humo") || cand.contains("niebla") || cand.contains("neblina") ||
+                cand.contains("detonada") || cand.contains("animal") || cand.contains("averiad") ||
+                cand.contains("alcantarilla") || cand.contains("semaforo") ||
+                cand.contains("silenciar") || cand.contains("activar voz")
+        } ?: primaryText
+
         when {
-            text.contains("silenciar") || text.contains("callar") || text.contains("mutear") -> {
+            matchText.contains("silenciar") || matchText.contains("callar") || matchText.contains("mutear") -> {
                 isMuted = true
                 _copilotStatusMessage.value = "Alertas sonoras silenciadas"
             }
-            text.contains("activar voz") || text.contains("desilenciar") || text.contains("reactivar") -> {
+            matchText.contains("activar voz") || matchText.contains("desilenciar") || matchText.contains("reactivar") -> {
                 isMuted = false
                 speak("Alertas sonoras reactivadas.")
                 _copilotStatusMessage.value = "Alertas sonoras activas"
             }
-            text.contains("bache central") || text.contains("pozo central") || text.contains("crater central") ||
-            text.contains("en el centro") || text.contains("en el medio") || text.contains("ambos sentidos") ||
-            text.contains("ambas manos") || text.contains("calzada en mal estado") -> {
-                speak("Pozo central publicado en ambas manos. Decí cancelar si fue un error.", isWarning = true)
-                _copilotStatusMessage.value = "¡Pozo central publicado!"
+            matchText.contains("bache central") || matchText.contains("pozo central") || matchText.contains("crater central") ||
+            matchText.contains("en el centro") || matchText.contains("en el medio") || matchText.contains("ambos sentidos") ||
+            matchText.contains("ambas manos") || matchText.contains("calzada en mal estado") -> {
+                speak("Pozo central publicado en ambas manos. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
+                _copilotStatusMessage.value = "¡Pozo central publicado! (Decí 'cancelar' para anular)"
                 onHazardCommandDetected?.invoke("pozo", 20, "Bache Central Peligroso", true, anchor)
             }
-            text.contains("pozo") || text.contains("bache") || text.contains("cráter") || text.contains("crater") ||
-            text.contains("hueco") || text.contains("lomo de burro") || text.contains("badén") || text.contains("baden") -> {
-                speak("Pozo publicado en tu carril. Decí cancelar si fue un error.", isWarning = true)
-                _copilotStatusMessage.value = "¡Bache publicado en tu carril!"
+            matchText.contains("pozo") || matchText.contains("bache") || matchText.contains("crater") ||
+            matchText.contains("hueco") || matchText.contains("lomo de burro") || matchText.contains("baden") -> {
+                speak("Pozo publicado en tu carril. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
+                _copilotStatusMessage.value = "¡Bache publicado! (Decí 'cancelar' para anular)"
                 onHazardCommandDetected?.invoke("pozo", 18, "Bache / Pozo Profundo", false, anchor)
             }
-            text.contains("polic") || text.contains("radar") || text.contains("fotomulta") ||
-            text.contains("gendarmer") || text.contains("caminera") || text.contains("control") -> {
-                speak("Control vial o radar publicado adelante.", isWarning = true)
+            matchText.contains("polic") || matchText.contains("radar") || matchText.contains("fotomulta") ||
+            matchText.contains("gendarmer") || matchText.contains("caminera") || matchText.contains("control") -> {
+                speak("Control vial o radar publicado adelante. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Control / Radar publicado!"
                 onHazardCommandDetected?.invoke("control_radar", 0, "Control / Radar Vial", true, anchor)
             }
-            text.contains("trabajo") || text.contains("obra") || text.contains("personal") ||
-            text.contains("cuadrilla") || text.contains("obrero") || text.contains("maquina") -> {
-                speak("Trabajos en ruta registrados en ambas manos.", isWarning = true)
+            matchText.contains("trabajo") || matchText.contains("obra") || matchText.contains("personal") ||
+            matchText.contains("cuadrilla") || matchText.contains("obrero") || matchText.contains("maquina") -> {
+                speak("Trabajos en ruta registrados. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Trabajos en ruta reportados!"
                 onHazardCommandDetected?.invoke("trabajos_obra", 0, "Trabajos en Ruta", true, anchor)
             }
-            text.contains("corte") || text.contains("cortad") || text.contains("desvío") || text.contains("desvio") ||
-            text.contains("piquete") || text.contains("manifestac") || text.contains("bloquead") -> {
-                speak("Corte o desvío de calzada registrado.", isWarning = true)
+            matchText.contains("corte") || matchText.contains("cortad") || matchText.contains("desvio") ||
+            matchText.contains("piquete") || matchText.contains("manifestac") || matchText.contains("bloquead") -> {
+                speak("Corte o desvío de calzada registrado. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Corte o desvío reportado!"
                 onHazardCommandDetected?.invoke("corte_obra", 0, "Corte / Desvío de Calzada", true, anchor)
             }
-            text.contains("agua") || text.contains("inundad") || text.contains("charco") ||
-            text.contains("hidroplaneo") || text.contains("acuaplaning") || text.contains("lluvia") -> {
-                speak("Agua acumulada sobre calzada publicada.", isWarning = true)
+            matchText.contains("agua") || matchText.contains("inundad") || matchText.contains("charco") ||
+            matchText.contains("hidroplaneo") || matchText.contains("acuaplaning") || matchText.contains("lluvia") -> {
+                speak("Agua acumulada publicada. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Agua acumulada reportada!"
                 onHazardCommandDetected?.invoke("agua", 0, "Agua Acumulada / Inundación", true, anchor)
             }
-            text.contains("humo") || text.contains("niebla") || text.contains("neblina") ||
-            text.contains("fuego") || text.contains("pastizal") || text.contains("visibilidad") -> {
-                speak("Alerta de humo o neblina publicada.", isWarning = true)
+            matchText.contains("humo") || matchText.contains("niebla") || matchText.contains("neblina") ||
+            matchText.contains("fuego") || matchText.contains("pastizal") || matchText.contains("visibilidad") -> {
+                speak("Alerta de humo o neblina publicada. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Humo o neblina reportada!"
                 onHazardCommandDetected?.invoke("neblina", 0, "Neblina y Humo", true, anchor)
             }
-            text.contains("detonada") || text.contains("asfalto") || text.contains("destruid") ||
-            text.contains("deteriorada") || text.contains("rota") || text.contains("barro") -> {
-                speak("Tramo de calzada deteriorada publicado.", isWarning = true)
+            matchText.contains("detonada") || matchText.contains("asfalto") || matchText.contains("destruid") ||
+            matchText.contains("deteriorada") || matchText.contains("rota") || matchText.contains("barro") -> {
+                speak("Calzada deteriorada publicada. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Calzada deteriorada reportada!"
                 onHazardCommandDetected?.invoke("ruta_detonada", 0, "Calzada Deteriorada", false, anchor)
             }
-            text.contains("animal") || text.contains("vaca") || text.contains("caballo") ||
-            text.contains("perro") || text.contains("guanaco") -> {
-                speak("Alerta de animales sueltos en ruta publicada.", isWarning = true)
+            matchText.contains("animal") || matchText.contains("vaca") || matchText.contains("caballo") ||
+            matchText.contains("perro") || matchText.contains("guanaco") -> {
+                speak("Alerta de animales sueltos publicada. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Animales sueltos reportados!"
                 onHazardCommandDetected?.invoke("animales", 0, "Animales Sueltos", true, anchor)
             }
-            text.contains("averiad") || text.contains("parado") || text.contains("varado") ||
-            text.contains("banquina") || text.contains("pinch") || text.contains("chocado") || text.contains("accidente") -> {
-                speak("Vehículo detenido en banquina publicado.", isWarning = true)
+            matchText.contains("averiad") || matchText.contains("parado") || matchText.contains("varado") ||
+            matchText.contains("banquina") || matchText.contains("pinch") || matchText.contains("chocado") || matchText.contains("accidente") -> {
+                speak("Vehículo detenido en banquina publicado. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Vehículo en banquina reportado!"
                 onHazardCommandDetected?.invoke("vehiculo_averiado", 0, "Auto en Banquina", false, anchor)
             }
-            text.contains("alcantarilla") -> {
-                speak("Alcantarilla peligrosa publicada.", isWarning = true)
+            matchText.contains("alcantarilla") -> {
+                speak("Alcantarilla peligrosa publicada. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Alcantarilla reportada!"
                 onHazardCommandDetected?.invoke("alcantarilla", 0, "Alcantarilla Rota", false, anchor)
             }
-            text.contains("semaforo") || text.contains("semáforo") -> {
-                speak("Semáforo fuera de servicio publicado.", isWarning = true)
+            matchText.contains("semaforo") -> {
+                speak("Semáforo fuera de servicio publicado. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "¡Semáforo apagado reportado!"
                 onHazardCommandDetected?.invoke("semaforo", 0, "Semáforo Apagado", true, anchor)
             }
-            text.contains("hola") || text.contains("ayuda") || text.contains("copiloto") -> {
-                speak("Copiloto listo. Decí: pozo, control, trabajos, agua, animales o niebla.", isWarning = false)
+            matchText.contains("hola") || matchText.contains("ayuda") || matchText.contains("copiloto") -> {
+                speak("Copiloto listo. Decí: pozo, control, trabajos, agua, animales o niebla.", isWarning = false, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "Copiloto listo para escuchar"
             }
             else -> {
                 speak("No te entendí. Podés decir: pozo, control, trabajos, agua o animales.", isWarning = false)
-                _copilotStatusMessage.value = "Oído '$spokenText' (no reconocido)"
+                _copilotStatusMessage.value = "Oído '$primaryText' (no reconocido)"
             }
         }
     }
 
     fun destroy() {
         cancelPendingRestart()
+        mainHandler.removeCallbacks(abandonFocusWatchdog)
         abandonSpeechAudioFocus()
+        activeUtteranceIds.clear()
+        isTtsSpeaking = false
         try {
             tts?.stop()
             tts?.shutdown()
@@ -580,5 +749,38 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         }
         tts = null
         cleanupSpeechRecognizer()
+    }
+
+    companion object {
+        fun normalizeSpeech(raw: String): String {
+            return raw.lowercase()
+                .trim()
+                .replace('á', 'a')
+                .replace('é', 'e')
+                .replace('í', 'i')
+                .replace('ó', 'o')
+                .replace('ú', 'u')
+                .replace('ü', 'u')
+        }
+
+        fun isUndoSpeechCommand(candidates: List<String>): Boolean {
+            return candidates.any { raw ->
+                val t = normalizeSpeech(raw)
+                t.contains("cancel") ||
+                    t.contains("anul") ||
+                    t.contains("borr") ||
+                    t.contains("elimin") ||
+                    t.contains("deshac") ||
+                    t.contains("equivoc") ||
+                    t.contains("equivoqu") ||
+                    t.contains("falsa") ||
+                    t.contains("no era") ||
+                    t.contains("sacar") ||
+                    t.contains("sacal") ||
+                    t == "saca" ||
+                    t.contains("error") ||
+                    t == "no"
+            }
+        }
     }
 }

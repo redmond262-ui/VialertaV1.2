@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.Amber400
@@ -65,36 +66,41 @@ fun ViaAlertaTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(42.dp)
-                .padding(horizontal = 10.dp, vertical = 2.dp),
+                .heightIn(min = 46.dp)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             // Left: Logo Icon + "VíaAlerta" + Location/Alerts Count
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
                 Surface(
                     color = Amber500.copy(alpha = 0.2f),
                     shape = CircleShape,
                     border = BorderStroke(1.dp, Amber400),
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(28.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = null,
                             tint = Amber400,
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
                 Spacer(modifier = Modifier.width(6.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "VíaAlerta",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Black,
                         color = Color.White,
-                        lineHeight = 14.sp
+                        lineHeight = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = if (estimatedKm > 0) {
@@ -104,12 +110,16 @@ fun ViaAlertaTopBar(
                         },
                         fontSize = 9.sp,
                         color = Color.White.copy(alpha = 0.65f),
-                        lineHeight = 10.sp
+                        lineHeight = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // Right: [🎙️ Voz] [👤 Conectar / Perfil]
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Right: [🎙️ Voz] [Admin] [👤 Conectar / Perfil]
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -124,21 +134,22 @@ fun ViaAlertaTopBar(
                         .testTag("topbar_voice_btn")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Mic,
                             contentDescription = null,
                             tint = Amber400,
-                            modifier = Modifier.size(11.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             text = "Voz",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Amber400
+                            color = Amber400,
+                            maxLines = 1
                         )
                     }
                 }
@@ -153,7 +164,7 @@ fun ViaAlertaTopBar(
                             .testTag("topbar_admin_btn")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -167,7 +178,8 @@ fun ViaAlertaTopBar(
                                 text = "Admin",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Amber400
+                                color = Amber400,
+                                maxLines = 1
                             )
                         }
                     }
@@ -182,21 +194,23 @@ fun ViaAlertaTopBar(
                         .testTag("topbar_profile_btn")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Person,
                             contentDescription = null,
                             tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(11.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             text = userName?.take(8) ?: "Conectar",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

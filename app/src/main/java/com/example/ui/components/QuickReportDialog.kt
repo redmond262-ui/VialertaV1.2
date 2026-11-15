@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.AlertRed500
@@ -200,8 +203,10 @@ fun QuickReportDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
+                .padding(bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             // Header with instant Voice Switch
@@ -213,21 +218,27 @@ fun QuickReportDialog(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.AddAlert, contentDescription = null, tint = Amber500, modifier = Modifier.size(22.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Reporte Express (1 Toque)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Black,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "Punto T₀ fijado • Publica al instante",
                             fontSize = 11.sp,
                             color = SafetyGreen500,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Surface(
                     color = Amber500,
@@ -245,7 +256,7 @@ fun QuickReportDialog(
                     ) {
                         Icon(Icons.Default.Mic, contentDescription = "Reportar por voz", tint = Color.Black, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Por Voz", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.Black)
+                        Text("Por Voz", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.Black, maxLines = 1)
                     }
                 }
 
@@ -279,7 +290,7 @@ fun QuickReportDialog(
                         border = BorderStroke(1.dp, if (isSelected) Amber400 else Slate700)
                     ) {
                         Box(
-                            modifier = Modifier.padding(vertical = 9.dp),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 9.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -287,7 +298,8 @@ fun QuickReportDialog(
                                 fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
                                 color = if (isSelected) Color.Black else Color.White,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -335,7 +347,8 @@ fun QuickReportDialog(
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -368,8 +381,12 @@ fun QuickReportDialog(
                         text = if (showAdvancedDetails) "Ocultar detalle opcional" else "⚙️ Agregar detalle (solo detenido)",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Amber400
+                        color = Amber400,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Icon(
                         imageVector = if (showAdvancedDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                         contentDescription = null,

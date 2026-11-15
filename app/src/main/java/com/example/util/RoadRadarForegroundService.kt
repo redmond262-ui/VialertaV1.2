@@ -1,5 +1,6 @@
 package com.example.util
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,14 +8,38 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.example.MainActivity
+import com.example.data.model.UserProfile
+import com.example.data.repository.RoadAlertRepository
+import com.example.data.repository.UserRepository
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 
 class RoadRadarForegroundService : Service() {
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var radarMonitoringJob: Job? = null
+    private var profileJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    @Volatile
+    private var cachedUserProfile: UserProfile? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -25,13 +50,101 @@ class RoadRadarForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopServiceCleanly()
             return START_NOT_STICKY
         }
 
         startInForeground()
+        acquireWakeLock()
+        startBackgroundRadarLoop()
         return START_STICKY
+    }
+
+    private fun stopServiceCleanly() {
+        ViaAlertaRadarHolder.isForegroundServiceRunning.value = false
+        radarMonitoringJob?.cancel()
+        profileJob?.cancel()
+        releaseWakeLock()
+        try {
+            ViaAlertaRadarHolder.getLocationRadarManager(applicationContext).stopContinuousTracking()
+            ViaAlertaRadarHolder.getVoiceCopilotManager(applicationContext).stopListening()
+        } catch (_: Throwable) {}
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) return
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ViaAlerta::RoadRadarWakeLock").apply {
+                setReferenceCounted(false)
+                // Safety timeout of 6 hours; re-acquired on each command start
+                acquire(6L * 60L * 60L * 1000L)
+            }
+        } catch (t: Throwable) {
+            Log.w("RoadRadarService", "Could not acquire WakeLock: ${t.message}")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (_: Throwable) {}
+        wakeLock = null
+    }
+
+    private fun startBackgroundRadarLoop() {
+        val appCtx = applicationContext
+        val radar = ViaAlertaRadarHolder.getLocationRadarManager(appCtx)
+        val alertRepo = RoadAlertRepository(appCtx)
+        val userRepo = UserRepository(appCtx)
+
+        ViaAlertaRadarHolder.ensureDefaultCallbacks(appCtx)
+        ViaAlertaRadarHolder.isForegroundServiceRunning.value = true
+        radar.startContinuousTracking()
+
+        if (profileJob?.isActive != true) {
+            profileJob = serviceScope.launch {
+                val uid = Firebase.auth.currentUser?.uid ?: return@launch
+                try {
+                    userRepo.observeUserProfile(uid).collectLatest { profile ->
+                        cachedUserProfile = profile
+                    }
+                } catch (t: Throwable) {
+                    Log.w("RoadRadarService", "Profile observer ended: ${t.message}")
+                }
+            }
+        }
+
+        if (radarMonitoringJob?.isActive == true) return
+
+        radarMonitoringJob = serviceScope.launch {
+            try {
+                combine(
+                    radar.currentLocation,
+                    alertRepo.observeActiveAlerts(),
+                    ViaAlertaRadarHolder.isDriveSimulationActive
+                ) { driverLoc, activeAlerts, isSimulating ->
+                    Triple(driverLoc, activeAlerts, isSimulating)
+                }.collectLatest { (driverLoc, activeAlerts, isSimulating) ->
+                    val currentUser = Firebase.auth.currentUser ?: return@collectLatest
+                    val email = currentUser.email?.lowercase()?.trim() ?: ""
+                    val isPro = UserRepository.isProEffective(appCtx, cachedUserProfile, email)
+                    val isDriveMode = isSimulating || (driverLoc.speedKmH > 15f)
+                    radar.checkProximityWarnings(
+                        activeAlerts = activeAlerts,
+                        isDriveMode = isDriveMode,
+                        isProUser = isPro,
+                        currentUserId = currentUser.uid
+                    )
+                }
+            } catch (t: Throwable) {
+                Log.w("RoadRadarService", "Radar monitoring loop error: ${t.message}")
+            }
+        }
     }
 
     private fun startInForeground() {
@@ -57,7 +170,7 @@ class RoadRadarForegroundService : Service() {
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("VíaAlerta: Copiloto en Ruta Activo")
-            .setContentText("Monitoreando baches, cortes y peligros viales en segundo plano.")
+            .setContentText("Alertas de pozos y peligros activas aunque cambies de app o apagues la pantalla.")
             .setSmallIcon(android.R.drawable.ic_dialog_map)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
@@ -67,11 +180,23 @@ class RoadRadarForegroundService : Service() {
                 stopPendingIntent
             )
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .build()
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val hasAudio = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val fgsType = if (hasAudio) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                }
+                startForeground(NOTIFICATION_ID, notification, fgsType)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
@@ -80,9 +205,19 @@ class RoadRadarForegroundService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-            Log.d("RoadRadarService", "Foreground service started successfully.")
+            Log.d("RoadRadarService", "Foreground service started (micType=$hasAudio).")
         } catch (t: Throwable) {
             Log.e("RoadRadarService", "Error starting foreground service: ${t.message}", t)
+            // Fallback to location-only if microphone FGS type isn't permitted from current state
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                    )
+                } catch (_: Throwable) {}
+            }
         }
     }
 
@@ -93,12 +228,21 @@ class RoadRadarForegroundService : Service() {
                 "VíaAlerta - Radar en Ruta",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Mantiene el asistente de voz y radar de baches activo con la pantalla apagada"
+                description = "Mantiene las alertas de pozos y el copiloto activos con la pantalla apagada o en otras apps"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
         }
+    }
+
+    override fun onDestroy() {
+        ViaAlertaRadarHolder.isForegroundServiceRunning.value = false
+        releaseWakeLock()
+        radarMonitoringJob?.cancel()
+        profileJob?.cancel()
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     companion object {
@@ -120,6 +264,7 @@ class RoadRadarForegroundService : Service() {
         }
 
         fun stop(context: Context) {
+            ViaAlertaRadarHolder.isForegroundServiceRunning.value = false
             try {
                 val intent = Intent(context, RoadRadarForegroundService::class.java)
                 context.stopService(intent)

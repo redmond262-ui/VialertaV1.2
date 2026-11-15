@@ -5,6 +5,7 @@ import com.example.util.DriverLocation
 import com.example.util.DriverPreferences
 import com.example.util.LocationRadarManager
 import com.example.util.RoadRoutingManager
+import com.example.util.VoiceCopilotManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -115,5 +116,68 @@ class DriverLogicUnitTest {
         assertEquals(89, DriverPreferences.formatSpeedLabel(88.7f))
         assertEquals(88, DriverPreferences.formatSpeedLabel(88.4f))
         assertEquals(0, DriverPreferences.formatSpeedLabel(-1f))
+    }
+
+    @Test
+    fun buildLateralCorridorWaypoints_generatesSymmetricCorridors() {
+        // Straight North-South route in Argentina (e.g. Ruta 9 segment)
+        val waypoints = RoadRoutingManager.buildLateralCorridorWaypoints(
+            lat1 = -34.0,
+            lon1 = -59.0,
+            lat2 = -33.0,
+            lon2 = -59.0
+        )
+        assertEquals(2, waypoints.size)
+        // Midpoint latitude is -33.5; lateral offsets should sit on opposite sides (east vs west)
+        assertTrue(waypoints[0].second < -59.0 && waypoints[1].second > -59.0 ||
+            waypoints[0].second > -59.0 && waypoints[1].second < -59.0)
+        assertEquals(-33.5, waypoints[0].first, 0.001)
+        assertEquals(-33.5, waypoints[1].first, 0.001)
+    }
+
+    @Test
+    fun buildFormattedGpsDescription_includesDistanceTownAndCoordinates() {
+        val ruralDesc = RoadRoutingManager.buildFormattedGpsDescription(
+            routePrefix = "RN 9",
+            townName = "San Pedro",
+            streetName = "Ruta Nacional 9",
+            distanceToTownMeters = 6400.0,
+            coordsText = "-33.67950, -59.66720"
+        )
+        assertTrue(ruralDesc.contains("RN 9"))
+        assertTrue(ruralDesc.contains("San Pedro"))
+        assertTrue(ruralDesc.contains("km"))
+        assertTrue(ruralDesc.contains("-33.67950, -59.66720"))
+
+        val insideTownDesc = RoadRoutingManager.buildFormattedGpsDescription(
+            routePrefix = "",
+            townName = "Chivilcoy",
+            streetName = null,
+            distanceToTownMeters = 450.0,
+            coordsText = "-34.89500, -60.01700"
+        )
+        assertEquals("GPS: En Chivilcoy (-34.89500, -60.01700)", insideTownDesc)
+
+        val fallbackCoordsOnly = RoadRoutingManager.buildFormattedGpsDescription(
+            routePrefix = "",
+            townName = null,
+            streetName = null,
+            distanceToTownMeters = 0.0,
+            coordsText = "-35.12345, -60.54321"
+        )
+        assertEquals("GPS: (-35.12345, -60.54321)", fallbackCoordsOnly)
+    }
+
+    @Test
+    fun isUndoSpeechCommand_acceptsSpanishCancelPhrasesAndRejectsNormalHazards() {
+        assertTrue(VoiceCopilotManager.isUndoSpeechCommand(listOf("Cancelar")))
+        assertTrue(VoiceCopilotManager.isUndoSpeechCommand(listOf("no era nada", "anular alerta")))
+        assertTrue(VoiceCopilotManager.isUndoSpeechCommand(listOf("me equivoqué")))
+        assertTrue(VoiceCopilotManager.isUndoSpeechCommand(listOf("falsa alarma sacalo")))
+        assertTrue(VoiceCopilotManager.isUndoSpeechCommand(listOf("fue un error")))
+
+        assertFalse(VoiceCopilotManager.isUndoSpeechCommand(listOf("bache profundo en mi mano")))
+        assertFalse(VoiceCopilotManager.isUndoSpeechCommand(listOf("control policial adelante")))
+        assertFalse(VoiceCopilotManager.isUndoSpeechCommand(emptyList()))
     }
 }

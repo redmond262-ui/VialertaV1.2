@@ -1,16 +1,23 @@
 package com.example.util
 
 import android.content.Context
+import android.location.Geocoder
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.hypot
 
 object RoadRoutingManager {
 
@@ -83,10 +90,6 @@ object RoadRoutingManager {
         return (distMeters / 20.8).coerceAtLeast(60.0)
     }
 
-    /**
-     * Adjusts remaining duration cleanly using the driver's smoothed moving speed
-     * (ignoring stops at traffic lights / gas stations so 0 km/h never corrupts pace).
-     */
     fun adjustDurationForMovingPace(
         baseDurationSeconds: Double,
         routeDistanceMeters: Double,
@@ -101,12 +104,6 @@ object RoadRoutingManager {
         return (baseDurationSeconds * blendedFactor).coerceAtLeast(30.0)
     }
 
-    /**
-     * Projects the driver onto the active street-by-street polyline:
-     * - Measures exact perpendicular deviation (crossTrackDistanceMeters) to know when off-route
-     * - Sums exact remaining meters vertex-by-vertex along the traced road polyline
-     * - Trims behind-the-car segments so distance ticks down accurately without network calls
-     */
     fun projectDriverOntoRoute(
         driverLat: Double,
         driverLon: Double,
@@ -138,7 +135,6 @@ object RoadRoutingManager {
             }
         }
 
-        // Advance past vertex if we are closer to next vertex along the forward path
         val startRemainingIdx = (bestIndex + 1).coerceAtMost(routePoints.lastIndex)
         val trimmed = mutableListOf(Pair(driverLat, driverLon))
         var remainingMeters = 0.0
@@ -161,9 +157,6 @@ object RoadRoutingManager {
         )
     }
 
-    /**
-     * Shortest distance (meters) from a hazard point to the actual traced road polyline.
-     */
     fun minDistanceMetersToRoute(
         lat: Double,
         lon: Double,
@@ -193,7 +186,7 @@ object RoadRoutingManager {
     ): Pair<String, String> {
         val totalSeconds = (durationSeconds + extraIncidentDelaySeconds).toLong().coerceAtLeast(60L)
         val arrivalMillis = nowMillis + (totalSeconds * 1000L)
-        val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+        val timeFormat = java.text.SimpleDateFormat("HH:mm", Locale.getDefault())
         val arrivalTimeString = "${timeFormat.format(java.util.Date(arrivalMillis))} hs"
 
         val hours = totalSeconds / 3600
@@ -207,9 +200,92 @@ object RoadRoutingManager {
     }
 
     /**
-     * Requests up to 3 real road-network routes from OSRM (`alternatives=3`) with retry and
-     * resilient timeouts so the driver can compare and pick among 3 options.
-     * Never caches failed network attempts as real routes.
+     * Generates 2 perpendicular midpoint corridor waypoints on either side of the A->B line
+     * so OSRM can discover genuine alternative road corridors even on straight Argentine highways
+     * where OSRM `alternatives=3` only returns 1 path.
+     */
+    fun buildLateralCorridorWaypoints(
+        lat1: Double,
+        lon1: Double,
+        lat2: Double,
+        lon2: Double,
+        offsetFraction: Double = 0.14
+    ): List<Pair<Double, Double>> {
+        val dLat = lat2 - lat1
+        val dLon = lon2 - lon1
+        val midLat = (lat1 + lat2) * 0.5
+        val midLon = (lon1 + lon2) * 0.5
+        val cosLat = cos(Math.toRadians(midLat)).coerceAtLeast(0.25)
+
+        val scaledDx = dLon * cosLat
+        val scaledDy = dLat
+        val norm = hypot(scaledDx, scaledDy)
+        if (norm < 1e-6) return emptyList()
+
+        // Perpendicular unit vector in metric-scaled degrees
+        val perpLat = (-scaledDx / norm) * (norm * offsetFraction)
+        val perpLon = (scaledDy / norm) * (norm * offsetFraction) / cosLat
+
+        return listOf(
+            Pair(midLat + perpLat, midLon + perpLon),
+            Pair(midLat - perpLat, midLon - perpLon)
+        )
+    }
+
+    private fun fetchOsrmRoutesSync(urlString: String, connectTimeoutMs: Int = 7000, readTimeoutMs: Int = 8000): List<RouteOption> {
+        val url = URL(urlString)
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
+            setRequestProperty("User-Agent", "ViaAlerta-Routing/1.2 (Android; Argentina)")
+        }
+
+        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+            val response = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
+            val json = JSONObject(response)
+            if (json.optString("code") == "Ok") {
+                val routes = json.optJSONArray("routes")
+                if (routes != null && routes.length() > 0) {
+                    val parsed = mutableListOf<RouteOption>()
+                    val count = routes.length().coerceAtMost(3)
+                    for (rIdx in 0 until count) {
+                        val routeObj = routes.getJSONObject(rIdx)
+                        val roadDist = routeObj.optDouble("distance", -1.0)
+                        val roadDuration = routeObj.optDouble("duration", -1.0)
+                        val points = parseRouteGeometry(routeObj, maxPoints = 1200)
+                        if (roadDist > 0.0 && roadDuration > 0.0 && points.size >= 2) {
+                            parsed.add(
+                                RouteOption(
+                                    index = rIdx,
+                                    label = "Opción ${rIdx + 1}",
+                                    distanceMeters = roadDist,
+                                    durationSeconds = roadDuration,
+                                    routePoints = points,
+                                    isFromNetwork = true
+                                )
+                            )
+                        }
+                    }
+                    return parsed
+                }
+            }
+        }
+        return emptyList()
+    }
+
+    private fun isNearlySameRoute(a: RouteOption, b: RouteOption): Boolean {
+        val distDiff = abs(a.distanceMeters - b.distanceMeters)
+        val aMid = a.routePoints[a.routePoints.size / 2]
+        val bMid = b.routePoints[b.routePoints.size / 2]
+        val midSepMeters = LocationRadarManager.calculateDistanceMeters(aMid.first, aMid.second, bMid.first, bMid.second)
+        return distDiff < 250.0 && midSepMeters < 300.0
+    }
+
+    /**
+     * Requests up to 3 real road-network routes from OSRM (`alternatives=3`).
+     * If public OSRM returns only 1 route on a trip >= 2.5 km, automatically queries
+     * 2 lateral corridor bypass waypoints in parallel so the driver receives 2–3 real options.
      */
     suspend fun getAlternativeRoutes(
         lat1: Double,
@@ -240,66 +316,76 @@ object RoadRoutingManager {
 
         val urlString = "$OSRM_BASE_URL$lon1,$lat1;$lon2,$lat2?overview=full&geometries=geojson&steps=false&alternatives=3"
 
+        var baseRoutes: List<RouteOption> = emptyList()
         for (attempt in 1..2) {
             try {
-                val url = URL(urlString)
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 7000
-                    readTimeout = 8000
-                    setRequestProperty("User-Agent", "ViaAlerta-Routing/1.2 (Android; Argentina)")
-                }
-
-                if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                    val response = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
-                    val json = JSONObject(response)
-                    if (json.optString("code") == "Ok") {
-                        val routes = json.optJSONArray("routes")
-                        if (routes != null && routes.length() > 0) {
-                            val parsed = mutableListOf<RouteOption>()
-                            val count = routes.length().coerceAtMost(3)
-                            for (rIdx in 0 until count) {
-                                val routeObj = routes.getJSONObject(rIdx)
-                                val roadDist = routeObj.optDouble("distance", -1.0)
-                                val roadDuration = routeObj.optDouble("duration", -1.0)
-                                val points = parseRouteGeometry(routeObj, maxPoints = 1200)
-                                if (roadDist > 0.0 && roadDuration > 0.0 && points.size >= 2) {
-                                    val label = when (rIdx) {
-                                        0 -> "Más rápida"
-                                        1 -> "Alternativa 2"
-                                        else -> "Alternativa 3"
-                                    }
-                                    parsed.add(
-                                        RouteOption(
-                                            index = rIdx,
-                                            label = label,
-                                            distanceMeters = roadDist,
-                                            durationSeconds = roadDuration,
-                                            routePoints = points,
-                                            isFromNetwork = true
-                                        )
-                                    )
-                                }
-                            }
-                            if (parsed.isNotEmpty()) {
-                                val first = parsed.first()
-                                routeCache[cacheKey] = CachedRoute(
-                                    distanceMeters = first.distanceMeters,
-                                    durationSeconds = first.durationSeconds,
-                                    timestamp = System.currentTimeMillis(),
-                                    routePoints = first.routePoints,
-                                    isFromNetwork = true
-                                )
-                                multiRouteCache[cacheKey] = CachedMultiRoute(parsed, System.currentTimeMillis())
-                                Log.d(TAG, "OSRM resolved ${parsed.size} route options cleanly")
-                                return@withContext parsed
-                            }
-                        }
-                    }
-                }
+                baseRoutes = fetchOsrmRoutesSync(urlString)
+                if (baseRoutes.isNotEmpty()) break
             } catch (t: Throwable) {
                 Log.w(TAG, "OSRM multi-route attempt $attempt failed: ${t.message}")
             }
+        }
+
+        if (baseRoutes.isNotEmpty()) {
+            val collected = baseRoutes.toMutableList()
+            val primary = collected.first()
+
+            // If OSRM only gave 1 path on a trip >= 2.5 km, query lateral bypass corridors in parallel
+            if (collected.size < 2 && straightDist >= 2500.0) {
+                val vias = buildLateralCorridorWaypoints(lat1, lon1, lat2, lon2, offsetFraction = 0.14)
+                if (vias.isNotEmpty()) {
+                    try {
+                        val viaCandidates = coroutineScope {
+                            vias.map { (vLat, vLon) ->
+                                async(Dispatchers.IO) {
+                                    try {
+                                        val viaUrl = "$OSRM_BASE_URL$lon1,$lat1;$vLon,$vLat;$lon2,$lat2?overview=full&geometries=geojson&steps=false"
+                                        fetchOsrmRoutesSync(viaUrl, connectTimeoutMs = 4500, readTimeoutMs = 5500).firstOrNull()
+                                    } catch (_: Throwable) {
+                                        null
+                                    }
+                                }
+                            }.mapNotNull { it.await() }
+                        }
+
+                        for (cand in viaCandidates) {
+                            val reasonableLength = cand.distanceMeters <= primary.distanceMeters * 2.1 &&
+                                cand.durationSeconds <= primary.durationSeconds * 2.3
+                            if (reasonableLength && collected.none { isNearlySameRoute(it, cand) }) {
+                                collected.add(cand)
+                            }
+                            if (collected.size >= 3) break
+                        }
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Lateral corridor fallback skipped: ${t.message}")
+                    }
+                }
+            }
+
+            // Re-index and apply clean Spanish labels sorted fastest-first
+            val sorted = collected
+                .sortedBy { it.durationSeconds }
+                .take(3)
+                .mapIndexed { idx, opt ->
+                    val label = when (idx) {
+                        0 -> "Más rápida"
+                        1 -> "Alternativa 2"
+                        else -> "Alternativa 3"
+                    }
+                    opt.copy(index = idx, label = label)
+                }
+
+            val first = sorted.first()
+            routeCache[cacheKey] = CachedRoute(
+                distanceMeters = first.distanceMeters,
+                durationSeconds = first.durationSeconds,
+                timestamp = System.currentTimeMillis(),
+                routePoints = first.routePoints,
+                isFromNetwork = true
+            )
+            multiRouteCache[cacheKey] = CachedMultiRoute(sorted, System.currentTimeMillis())
+            Log.d(TAG, "OSRM resolved ${sorted.size} route options cleanly")
+            return@withContext sorted
         }
 
         // Offline fallback — explicitly flagged isFromNetwork = false and NOT stored in network cache
@@ -334,13 +420,15 @@ object RoadRoutingManager {
         }
         if (total > 0) {
             val lastPt = coords.optJSONArray(total - 1)
-            if (lastPt != null && lastPt.length() >= 2) {
+            if (lastPt != null && ptIsValid(lastPt)) {
                 val tail = Pair(lastPt.getDouble(1), lastPt.getDouble(0))
                 if (points.lastOrNull() != tail) points.add(tail)
             }
         }
         return points
     }
+
+    private fun ptIsValid(arr: org.json.JSONArray): Boolean = arr.length() >= 2
 
     suspend fun getActualRouteDetails(
         lat1: Double,
@@ -373,18 +461,34 @@ object RoadRoutingManager {
         val longitude: Double
     )
 
-    suspend fun searchPlaces(query: String, context: Context): List<GeocodedPlace> = withContext(Dispatchers.IO) {
+    private fun isInsideArgentina(lat: Double, lon: Double): Boolean {
+        return lat in -55.5..-21.5 && lon in -74.0..-53.0
+    }
+
+    suspend fun searchPlaces(
+        query: String,
+        context: Context,
+        biasLat: Double = -34.6037,
+        biasLon: Double = -58.3816
+    ): List<GeocodedPlace> = withContext(Dispatchers.IO) {
         val cleanQuery = query.trim()
         if (cleanQuery.length < 2) return@withContext emptyList()
         val results = mutableListOf<GeocodedPlace>()
 
         try {
-            val geocoder = android.location.Geocoder(context, java.util.Locale("es", "AR"))
-            val addresses = geocoder.getFromLocationName(cleanQuery, 6)
+            val geocoder = Geocoder(context, Locale("es", "AR"))
+            @Suppress("DEPRECATION")
+            val addresses = geocoder.getFromLocationName(
+                cleanQuery,
+                6,
+                -55.2, -73.6, -21.7, -53.6
+            )
             addresses?.forEach { addr ->
-                val title = addr.featureName ?: addr.thoroughfare ?: addr.locality ?: cleanQuery
-                val subtitle = listOfNotNull(addr.locality, addr.subAdminArea, addr.adminArea).distinct().joinToString(", ")
-                results.add(GeocodedPlace(title, if (subtitle.isNotBlank()) subtitle else "Argentina", addr.latitude, addr.longitude))
+                if (isInsideArgentina(addr.latitude, addr.longitude)) {
+                    val title = addr.featureName ?: addr.thoroughfare ?: addr.locality ?: cleanQuery
+                    val subtitle = listOfNotNull(addr.locality, addr.subAdminArea, addr.adminArea).distinct().joinToString(", ")
+                    results.add(GeocodedPlace(title, if (subtitle.isNotBlank()) subtitle else "Argentina", addr.latitude, addr.longitude))
+                }
             }
         } catch (t: Throwable) {
             Log.w(TAG, "Android Geocoder error: ${t.message}")
@@ -392,8 +496,8 @@ object RoadRoutingManager {
 
         if (results.isEmpty()) {
             try {
-                val encoded = java.net.URLEncoder.encode(cleanQuery, "UTF-8")
-                val url = URL("https://photon.komoot.io/api/?q=$encoded&limit=6&lang=es")
+                val encoded = URLEncoder.encode(cleanQuery, "UTF-8")
+                val url = URL("https://photon.komoot.io/api/?q=$encoded&limit=6&lang=es&lat=$biasLat&lon=$biasLon")
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     connectTimeout = 3500
@@ -430,7 +534,7 @@ object RoadRoutingManager {
 
         if (results.isEmpty()) {
             try {
-                val encoded = java.net.URLEncoder.encode(cleanQuery, "UTF-8")
+                val encoded = URLEncoder.encode(cleanQuery, "UTF-8")
                 val url = URL("https://nominatim.openstreetmap.org/search?q=$encoded&format=json&countrycodes=ar&limit=5")
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
@@ -457,6 +561,148 @@ object RoadRoutingManager {
             }
         }
 
-        results
+        results.sortedByDescending { isInsideArgentina(it.latitude, it.longitude) }
+    }
+
+    /**
+     * Resolves exact GPS coordinates to the current town/locality or nearest town/paraje + distance + coordinates
+     * so hitchhike pickups and SOS locations never display generic placeholders.
+     */
+    suspend fun describeLocationWithNearestTown(
+        context: Context,
+        lat: Double,
+        lng: Double
+    ): String = withContext(Dispatchers.IO) {
+        val coordsText = String.format(Locale.US, "%.4f, %.4f", lat, lng)
+        val (routeName, estimatedKm) = LocationRadarManager.resolveRouteAndKm(lat, lng)
+        val routePrefix = when {
+            estimatedKm > 0 -> "$routeName Km $estimatedKm"
+            routeName != "Camino Rural / Interurbano" -> routeName
+            else -> ""
+        }
+
+        var townName: String? = null
+        var streetName: String? = null
+        var adminArea: String? = null
+        var townLat: Double? = null
+        var townLng: Double? = null
+
+        // 1. Reverse geocode via Android Geocoder
+        try {
+            val geocoder = Geocoder(context, Locale("es", "AR"))
+            @Suppress("DEPRECATION")
+            val addresses = geocoder.getFromLocation(lat, lng, 3)
+            val addr = addresses?.firstOrNull()
+            if (addr != null) {
+                streetName = addr.thoroughfare?.takeIf { it.isNotBlank() && !it.startsWith("Unnamed", true) }
+                townName = listOfNotNull(addr.locality, addr.subLocality, addr.subAdminArea)
+                    .firstOrNull { it.isNotBlank() }
+                adminArea = addr.adminArea?.takeIf { it.isNotBlank() }
+
+                if (!townName.isNullOrBlank()) {
+                    try {
+                        @Suppress("DEPRECATION")
+                        val center = geocoder.getFromLocationName(
+                            listOfNotNull(townName, adminArea, "Argentina").joinToString(", "),
+                            1,
+                            -55.2, -73.6, -21.7, -53.6
+                        )?.firstOrNull()
+                        if (center != null) {
+                            townLat = center.latitude
+                            townLng = center.longitude
+                        }
+                    } catch (_: Throwable) {}
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Reverse Geocoder error: ${t.message}")
+        }
+
+        // 2. If settlement center or town name still missing, query Photon reverse for nearest town/village/hamlet
+        if (townName.isNullOrBlank() || townLat == null || townLng == null) {
+            try {
+                val url = URL("https://photon.komoot.io/reverse?lat=$lat&lon=$lng&limit=6")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 3500
+                    readTimeout = 3500
+                    setRequestProperty("User-Agent", "ViaAlerta-App/1.2 (Android; Argentina)")
+                }
+                if (conn.responseCode == HttpURLConnection.HTTP_OK) {
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    val features = JSONObject(text).optJSONArray("features")
+                    if (features != null) {
+                        var bestDist = Double.MAX_VALUE
+                        val settlementTypes = setOf("city", "town", "village", "hamlet", "suburb", "locality")
+                        for (i in 0 until features.length()) {
+                            val feat = features.getJSONObject(i)
+                            val props = feat.optJSONObject("properties") ?: continue
+                            val coords = feat.optJSONObject("geometry")?.optJSONArray("coordinates") ?: continue
+                            val fLon = coords.optDouble(0)
+                            val fLat = coords.optDouble(1)
+                            val osmVal = props.optString("osm_value", "")
+                            val candidateName = props.optString("name", "").ifBlank {
+                                props.optString("city", props.optString("county", ""))
+                            }
+                            if (candidateName.isNotBlank()) {
+                                val dist = LocationRadarManager.calculateDistanceMeters(lat, lng, fLat, fLon)
+                                val isSettlement = osmVal in settlementTypes || props.optString("osm_key") == "place"
+                                if ((isSettlement && dist < bestDist) || (townName.isNullOrBlank() && i == 0)) {
+                                    bestDist = dist
+                                    townName = candidateName
+                                    townLat = fLat
+                                    townLng = fLon
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Photon reverse fallback error: ${t.message}")
+            }
+        }
+
+        val distanceToTown = if (townLat != null && townLng != null) {
+            LocationRadarManager.calculateDistanceMeters(lat, lng, townLat, townLng)
+        } else {
+            -1.0
+        }
+
+        buildFormattedGpsDescription(
+            routePrefix = routePrefix,
+            townName = townName,
+            streetName = streetName,
+            distanceToTownMeters = distanceToTown,
+            coordsText = coordsText
+        )
+    }
+
+    fun buildFormattedGpsDescription(
+        routePrefix: String,
+        townName: String?,
+        streetName: String?,
+        distanceToTownMeters: Double,
+        coordsText: String
+    ): String {
+        val locationPart = when {
+            !townName.isNullOrBlank() && distanceToTownMeters >= 1500.0 -> {
+                val distLabel = LocationRadarManager.formatDisplayDistance(distanceToTownMeters)
+                "A $distLabel de $townName"
+            }
+            !townName.isNullOrBlank() && !streetName.isNullOrBlank() && !streetName.equals(townName, ignoreCase = true) ->
+                "$streetName, $townName"
+            !townName.isNullOrBlank() ->
+                "En $townName"
+            !streetName.isNullOrBlank() ->
+                streetName
+            else -> ""
+        }
+
+        val prefixParts = listOf(routePrefix, locationPart).filter { it.isNotBlank() }
+        return if (prefixParts.isNotEmpty()) {
+            "GPS: ${prefixParts.joinToString(" · ")} ($coordsText)"
+        } else {
+            "GPS: ($coordsText)"
+        }
     }
 }

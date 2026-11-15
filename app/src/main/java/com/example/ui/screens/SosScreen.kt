@@ -5,17 +5,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.Build
@@ -60,6 +64,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.SosRequest
@@ -190,13 +196,31 @@ fun SosScreen(
                             Tab(
                                 selected = selectedTab == 0,
                                 onClick = { selectedTab = 0 },
-                                text = { Text("Mi Pedido de Auxilio", fontWeight = FontWeight.Bold) },
+                                text = {
+                                    Text(
+                                        text = "Mi Pedido de Auxilio",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        lineHeight = 14.sp,
+                                        maxLines = 2,
+                                        textAlign = TextAlign.Center
+                                    )
+                                },
                                 modifier = Modifier.testTag("tab_my_sos")
                             )
                             Tab(
                                 selected = selectedTab == 1,
                                 onClick = { selectedTab = 1 },
-                                text = { Text("Auxilios en Ruta (${allActiveSos.size})", fontWeight = FontWeight.Bold) },
+                                text = {
+                                    Text(
+                                        text = "Auxilios en Ruta (${allActiveSos.size})",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        lineHeight = 14.sp,
+                                        maxLines = 2,
+                                        textAlign = TextAlign.Center
+                                    )
+                                },
                                 modifier = Modifier.testTag("tab_nearby_sos")
                             )
                         }
@@ -294,8 +318,9 @@ fun SosScreen(
                                         OutlinedTextField(
                                             value = ownerName,
                                             onValueChange = { ownerName = it },
-                                            label = { Text("Nombre Titular") },
+                                            label = { Text("Nombre Titular", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                             placeholder = { Text("Ej: Carlos Silva", color = Color.White.copy(alpha = 0.35f)) },
+                                            singleLine = true,
                                             modifier = Modifier.weight(1f).testTag("sos_name_input"),
                                             colors = OutlinedTextFieldDefaults.colors(
                                                 focusedBorderColor = Amber500,
@@ -306,8 +331,9 @@ fun SosScreen(
                                         OutlinedTextField(
                                             value = ownerDni,
                                             onValueChange = { ownerDni = it },
-                                            label = { Text("DNI Titular") },
+                                            label = { Text("DNI Titular", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                             placeholder = { Text("Ej: 36.123.456", color = Color.White.copy(alpha = 0.35f)) },
+                                            singleLine = true,
                                             modifier = Modifier.weight(1f).testTag("sos_dni_input"),
                                             colors = OutlinedTextFieldDefaults.colors(
                                                 focusedBorderColor = Amber500,
@@ -323,8 +349,9 @@ fun SosScreen(
                                         OutlinedTextField(
                                             value = vehicleModel,
                                             onValueChange = { vehicleModel = it },
-                                            label = { Text("Marca y Modelo") },
+                                            label = { Text("Marca y Modelo", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                             placeholder = { Text("Ej: Toyota Hilux", color = Color.White.copy(alpha = 0.35f)) },
+                                            singleLine = true,
                                             modifier = Modifier.weight(1.2f).testTag("sos_vehicle_input"),
                                             colors = OutlinedTextFieldDefaults.colors(
                                                 focusedBorderColor = Amber500,
@@ -335,8 +362,9 @@ fun SosScreen(
                                         OutlinedTextField(
                                             value = vehicleColor,
                                             onValueChange = { vehicleColor = it },
-                                            label = { Text("Color") },
+                                            label = { Text("Color", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                             placeholder = { Text("Ej: Blanco", color = Color.White.copy(alpha = 0.35f)) },
+                                            singleLine = true,
                                             modifier = Modifier.weight(0.8f).testTag("sos_color_input"),
                                             colors = OutlinedTextFieldDefaults.colors(
                                                 focusedBorderColor = Amber500,
@@ -352,8 +380,9 @@ fun SosScreen(
                                         OutlinedTextField(
                                             value = licensePlate,
                                             onValueChange = { licensePlate = it },
-                                            label = { Text("Patente / Dominio") },
+                                            label = { Text("Patente / Dominio", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                             placeholder = { Text("Ej: AB 123 CD", color = Color.White.copy(alpha = 0.35f)) },
+                                            singleLine = true,
                                             modifier = Modifier.weight(1f).testTag("sos_plate_input"),
                                             colors = OutlinedTextFieldDefaults.colors(
                                                 focusedBorderColor = Amber500,
@@ -364,8 +393,9 @@ fun SosScreen(
                                         OutlinedTextField(
                                             value = phone,
                                             onValueChange = { phone = it },
-                                            label = { Text("WhatsApp (opcional)") },
+                                            label = { Text("WhatsApp (opcional)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                             placeholder = { Text("Ej: 11 4455 6677", color = Color.White.copy(alpha = 0.35f)) },
+                                            singleLine = true,
                                             modifier = Modifier.weight(1.2f).testTag("sos_phone_input"),
                                             colors = OutlinedTextFieldDefaults.colors(
                                                 focusedBorderColor = Amber500,
@@ -469,7 +499,7 @@ fun SosScreen(
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(54.dp)
+                                    .heightIn(min = 54.dp)
                                     .testTag("publish_sos_btn"),
                                 colors = ButtonDefaults.buttonColors(containerColor = AlertRed500, contentColor = Color.White),
                                 shape = RoundedCornerShape(14.dp),
@@ -478,7 +508,9 @@ fun SosScreen(
                                 Text(
                                     text = if (isSubmitting) "Publicando SOS..." else "🚨 PUBLICAR PEDIDO DE AUXILIO SOS",
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Black
+                                    fontWeight = FontWeight.Black,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             Spacer(modifier = Modifier.height(40.dp))
@@ -555,6 +587,7 @@ private fun ActiveSosCard(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
         Surface(
@@ -568,16 +601,23 @@ private fun ActiveSosCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🚨", fontSize = 24.sp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🚨", fontSize = 22.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "AUXILIO ACTIVO EN MAPA",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Black,
-                            color = AlertRed500
+                            color = AlertRed500,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Surface(
                         color = SafetyGreen500.copy(alpha = 0.2f),
@@ -589,7 +629,13 @@ private fun ActiveSosCard(
                         ) {
                             Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SafetyGreen500, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("DNI Verificado", style = MaterialTheme.typography.labelSmall, color = SafetyGreen500, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "DNI Verificado",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SafetyGreen500,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
                         }
                     }
                 }
@@ -639,7 +685,8 @@ private fun ActiveSosCard(
                 // MANDATORY RESOLUTION BUTTON
                 Button(
                     onClick = onResolve,
-                    modifier = Modifier.fillMaxWidth().height(52.dp).testTag("sos_resolve_btn"),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("sos_resolve_btn"),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = AlertRed700),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -648,7 +695,9 @@ private fun ActiveSosCard(
                     Text(
                         text = "¡Ya fui auxiliado / Solucionado! Quitar alerta",
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Black
+                        fontWeight = FontWeight.Black,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -656,14 +705,17 @@ private fun ActiveSosCard(
 
                 Button(
                     onClick = onDelete,
-                    modifier = Modifier.fillMaxWidth().height(46.dp).testTag("sos_delete_btn"),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp).testTag("sos_delete_btn"),
                     colors = ButtonDefaults.buttonColors(containerColor = AlertRed500, contentColor = Color.White),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = "🗑️ Eliminar Auxilio (Prueba)",
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -694,16 +746,23 @@ private fun NearbySosCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text("🚗", fontSize = 20.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "${sos.vehicleModel} (${sos.vehicleColor})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Surface(
                     color = AlertRed500.copy(alpha = 0.2f),
@@ -714,7 +773,8 @@ private fun NearbySosCard(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
-                        fontWeight = FontWeight.Black
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1
                     )
                 }
             }
@@ -749,22 +809,36 @@ private fun NearbySosCard(
             ) {
                 Button(
                     onClick = onHelpWhatsApp,
-                    modifier = Modifier.weight(1f).testTag("sos_offer_help_btn"),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("sos_offer_help_btn"),
                     colors = ButtonDefaults.buttonColors(containerColor = SafetyGreen500, contentColor = Color.Black),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Ayudar WhatsApp", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Ayudar WhatsApp",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
                 Button(
                     onClick = onDeleteSos,
-                    modifier = Modifier.testTag("sos_delete_nearby_${sos.id}"),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.heightIn(min = 44.dp).testTag("sos_delete_nearby_${sos.id}"),
                     colors = ButtonDefaults.buttonColors(containerColor = AlertRed500.copy(alpha = 0.8f), contentColor = Color.White),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("🗑️ Descartar", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "🗑️ Descartar",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }

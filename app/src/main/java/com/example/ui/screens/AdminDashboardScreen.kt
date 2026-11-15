@@ -6,11 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.HorizontalDivider
@@ -211,18 +214,22 @@ fun AdminDashboardScreen(
                             }
                         }
                         Spacer(modifier = Modifier.width(14.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Panel Maestro VíaAlerta",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Usuario verificado: ${currentUserEmail.ifBlank { "redmond262@gmail.com" }}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = SafetyGreen500,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -267,7 +274,7 @@ fun AdminDashboardScreen(
                             }
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "🧪 INTERRUPTOR DE PRUEBA DE CAMPO",
                                 style = MaterialTheme.typography.titleSmall,
@@ -301,9 +308,10 @@ fun AdminDashboardScreen(
                                 contentColor = if (ownerOverrideMode == UserRepository.OWNER_MODE_FORCE_PRO) Color.Black else Color.White
                             ),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f).testTag("owner_btn_force_pro")
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 40.dp).testTag("owner_btn_force_pro")
                         ) {
-                            Text("🌟 PRO", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("🌟 PRO", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
 
                         Button(
@@ -319,9 +327,10 @@ fun AdminDashboardScreen(
                                 contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f).testTag("owner_btn_force_freemium")
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 40.dp).testTag("owner_btn_force_freemium")
                         ) {
-                            Text("📱 Freemium", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("📱 Freemium", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
 
                         Button(
@@ -337,9 +346,10 @@ fun AdminDashboardScreen(
                                 contentColor = if (ownerOverrideMode == UserRepository.OWNER_MODE_AUTO) Color.Black else Color.White
                             ),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f).testTag("owner_btn_force_auto")
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 40.dp).testTag("owner_btn_force_auto")
                         ) {
-                            Text("🔄 Auto", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("🔄 Auto", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
 
@@ -392,7 +402,10 @@ fun AdminDashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Surface(
                             shape = CircleShape,
                             color = SafetyGreen500.copy(alpha = 0.2f),
@@ -408,7 +421,7 @@ fun AdminDashboardScreen(
                             }
                         }
                         Spacer(modifier = Modifier.width(14.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
                                     modifier = Modifier
@@ -429,15 +442,21 @@ fun AdminDashboardScreen(
                                 text = "Conductores Conectados",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "${onlineDrivers.count { it.isDriving }} circulando en ruta activa",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
                         text = "${onlineDrivers.size}",
@@ -539,7 +558,10 @@ fun AdminDashboardScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
                                     Text(
                                         text = "#${index + 1}",
                                         style = MaterialTheme.typography.titleMedium,
@@ -551,9 +573,12 @@ fun AdminDashboardScreen(
                                         text = pair.first,
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Surface(
                                     color = Slate800,
                                     shape = RoundedCornerShape(8.dp)
@@ -563,7 +588,8 @@ fun AdminDashboardScreen(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = Amber400,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
                                     )
                                 }
                             }
@@ -584,12 +610,17 @@ fun AdminDashboardScreen(
                     text = "CONDUCTORES EN RUTA EN VIVO (${onlineDrivers.size})",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = SafetyGreen500
+                    color = SafetyGreen500,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Latidos cada 25s",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = Color.White.copy(alpha = 0.5f),
+                    maxLines = 1
                 )
             }
 
@@ -627,20 +658,26 @@ fun AdminDashboardScreen(
                                             .background(if (driver.isDriving) SafetyGreen500 else Amber400)
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = driver.userName.ifBlank { "Conductor #${index + 1}" },
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = "📍 ${driver.routeName}",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = Amber400
+                                            color = Amber400,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
+
+                                Spacer(modifier = Modifier.width(8.dp))
 
                                 Column(horizontalAlignment = Alignment.End) {
                                     Surface(

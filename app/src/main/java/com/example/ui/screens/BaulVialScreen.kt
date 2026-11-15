@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BaulVialItem
@@ -172,7 +175,6 @@ fun BaulVialScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .padding(padding)
                 .padding(horizontal = 16.dp)
         ) {
@@ -382,6 +384,8 @@ fun BaulVialScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 8.dp)
             ) {
@@ -413,7 +417,9 @@ fun BaulVialScreen(
                                     text = label,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
-                                    color = if (active) Color(0xFF0F172A) else Color.White
+                                    color = if (active) Color(0xFF0F172A) else Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -786,7 +792,11 @@ private fun BaulVialItemCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Surface(
                         color = if (isFound) Amber500.copy(alpha = 0.2f) else Color(0xFF38BDF8).copy(alpha = 0.2f),
                         shape = RoundedCornerShape(8.dp)
@@ -796,11 +806,20 @@ private fun BaulVialItemCard(
                             color = if (isFound) Amber400 else Color(0xFF38BDF8),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Black,
+                            maxLines = 1,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
-                    Text(text = "${meta.emoji} ${meta.label}", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "${meta.emoji} ${meta.label}",
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
+                Spacer(modifier = Modifier.width(6.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(text = timeStr, fontSize = 10.sp, color = Color.White.copy(alpha = 0.55f))
@@ -897,19 +916,34 @@ private fun BaulVialItemCard(
                                 if (targetPhone.isNotBlank()) {
                                     Button(
                                         onClick = { onOpenWhatsApp(targetPhone) },
+                                        contentPadding = PaddingValues(horizontal = 10.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color(0xFF0F172A)),
                                         shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f).heightIn(min = 40.dp)
                                     ) {
-                                        Text("💬 WhatsApp $targetPerson", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = "💬 WhatsApp $targetPerson",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                                 if (isPublisher) {
                                     OutlinedButton(
                                         onClick = onMarkReturned,
-                                        shape = RoundedCornerShape(8.dp)
+                                        contentPadding = PaddingValues(horizontal = 10.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.heightIn(min = 40.dp)
                                     ) {
-                                        Text("🎉 Devuelto", fontSize = 11.sp, color = Color.White)
+                                        Text(
+                                            text = "🎉 Devuelto",
+                                            fontSize = 11.sp,
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }
@@ -947,18 +981,32 @@ private fun BaulVialItemCard(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     onClick = onApproveClick,
+                                    contentPadding = PaddingValues(horizontal = 10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color(0xFF0F172A)),
                                     shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f).heightIn(min = 40.dp)
                                 ) {
-                                    Text("✅ Es el dueño", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "✅ Es el dueño",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                                 OutlinedButton(
                                     onClick = onRejectClick,
+                                    contentPadding = PaddingValues(horizontal = 10.dp),
                                     shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f).heightIn(min = 40.dp)
                                 ) {
-                                    Text("❌ Rechazar", fontSize = 11.sp, color = AlertRed500)
+                                    Text(
+                                        text = "❌ Rechazar",
+                                        fontSize = 11.sp,
+                                        color = AlertRed500,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                         }

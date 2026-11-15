@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.Manifest
@@ -450,6 +451,7 @@ fun VoiceCopilotScreen(
                                     color = Color.White.copy(alpha = 0.6f)
                                 )
                             }
+                            Spacer(modifier = Modifier.width(8.dp))
                             Surface(
                                 color = Amber500.copy(alpha = 0.15f),
                                 shape = RoundedCornerShape(8.dp),
@@ -470,7 +472,9 @@ fun VoiceCopilotScreen(
                                         text = "Reportar",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = Amber400,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -517,6 +521,8 @@ fun VoiceCopilotScreen(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
 
         SnackbarHost(

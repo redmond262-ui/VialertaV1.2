@@ -444,7 +444,8 @@ class LocationRadarManager(
                         try {
                             copilotManager?.speak(
                                 "¡${activeZone.zoneName.replaceFirstChar { it.uppercase() }} finalizada! Calzada en condiciones normales, podés retomar tu velocidad habitual.",
-                                isWarning = false
+                                isWarning = false,
+                                queueIfSpeaking = true
                             )
                         } catch (t: Throwable) {
                             Log.w("LocationRadar", "Exit speech error: ${t.message}")
@@ -517,7 +518,7 @@ class LocationRadarManager(
 
                 val speechText = "¡Atención! Se aproxima ${cluster.zoneName} a $roundedDist, $lengthText. Reduzca la velocidad."
                 try {
-                    copilotManager?.speak(speechText, isWarning = true)
+                    copilotManager?.speak(speechText, isWarning = true, queueIfSpeaking = true)
                 } catch (t: Throwable) {
                     Log.w("LocationRadar", "Cluster speech error: ${t.message}")
                 }
@@ -564,7 +565,7 @@ class LocationRadarManager(
                     }
 
                     try {
-                        copilotManager?.speak(speechText, isWarning = true)
+                        copilotManager?.speak(speechText, isWarning = true, queueIfSpeaking = true)
                     } catch (t: Throwable) {
                         Log.w("LocationRadar", "Stage 1 speech error: ${t.message}")
                     }
@@ -596,7 +597,7 @@ class LocationRadarManager(
                     }
 
                     try {
-                        copilotManager?.speak(imminentText, isWarning = true)
+                        copilotManager?.speak(imminentText, isWarning = true, queueIfSpeaking = true)
                     } catch (t: Throwable) {
                         Log.w("LocationRadar", "Stage 2 speech error: ${t.message}")
                     }

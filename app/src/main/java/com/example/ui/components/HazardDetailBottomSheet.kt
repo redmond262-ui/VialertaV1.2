@@ -7,15 +7,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -44,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.RoadAlert
 import com.example.ui.theme.AlertRed500
@@ -116,8 +122,10 @@ fun HazardDetailBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
+                .padding(bottom = 28.dp)
         ) {
             // Header
             Row(
@@ -125,7 +133,10 @@ fun HazardDetailBottomSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Box(
                         modifier = Modifier
                             .size(14.dp)
@@ -137,7 +148,9 @@ fun HazardDetailBottomSheet(
                         text = "ALERTA COMUNITARIA",
                         style = MaterialTheme.typography.labelSmall,
                         color = color,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -222,7 +235,10 @@ fun HazardDetailBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Text(
                                 text = "Distancia: ",
                                 style = MaterialTheme.typography.bodySmall,
@@ -232,14 +248,18 @@ fun HazardDetailBottomSheet(
                                 text = formattedDistance,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Amber400,
-                                fontWeight = FontWeight.Black
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Confirmaciones: ${alert.confirmations}",
                             style = MaterialTheme.typography.bodySmall,
                             color = SafetyGreen500,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
                         )
                     }
                 }
@@ -254,12 +274,13 @@ fun HazardDetailBottomSheet(
             ) {
                 Button(
                     onClick = onConfirmHazard,
-                    modifier = Modifier.weight(1f).testTag("confirm_hazard_btn"),
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("confirm_hazard_btn"),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Color.Black)
                 ) {
                     Icon(Icons.Default.ThumbUp, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Sigue Ahí (+1)")
+                    Text("Sigue Ahí (+1)", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
 
                 Button(
@@ -277,12 +298,13 @@ fun HazardDetailBottomSheet(
                         }
                         shareViaWhatsApp(context = context, text = shareMessage)
                     },
-                    modifier = Modifier.weight(1f).testTag("share_whatsapp_btn"),
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("share_whatsapp_btn"),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = SafetyGreen500, contentColor = Color.Black)
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("WhatsApp")
+                    Text("WhatsApp", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
 

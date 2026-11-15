@@ -5,11 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -65,6 +67,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.RoadAlert
@@ -197,11 +200,14 @@ fun ProfileScreen(
                         .testTag("open_admin_panel_btn")
                 ) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Surface(
                                 color = Amber500.copy(alpha = 0.25f),
                                 shape = CircleShape,
@@ -217,20 +223,25 @@ fun ProfileScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "👑 Panel de Control (Dueño)",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Amber400
+                                    color = Amber400,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = "Métricas nacionales, reset de BD y control",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = null,
@@ -273,14 +284,15 @@ fun ProfileScreen(
                                     UserRepository.setOwnerOverrideMode(context, UserRepository.OWNER_MODE_FORCE_PRO)
                                     coroutineScope.launch { snackbarHostState.showSnackbar("🌟 Modo PRO forzado activado.") }
                                 },
+                                contentPadding = PaddingValues(horizontal = 6.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (ownerOverrideMode == UserRepository.OWNER_MODE_FORCE_PRO) Amber500 else Slate800,
                                     contentColor = if (ownerOverrideMode == UserRepository.OWNER_MODE_FORCE_PRO) Color.Black else Color.White
                                 ),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).heightIn(min = 40.dp)
                             ) {
-                                Text("🌟 PRO", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("🌟 PRO", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
 
                             Button(
@@ -289,14 +301,15 @@ fun ProfileScreen(
                                     UserRepository.setOwnerOverrideMode(context, UserRepository.OWNER_MODE_FORCE_FREEMIUM)
                                     coroutineScope.launch { snackbarHostState.showSnackbar("📱 Modo Freemium forzado activado.") }
                                 },
+                                contentPadding = PaddingValues(horizontal = 6.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (ownerOverrideMode == UserRepository.OWNER_MODE_FORCE_FREEMIUM) RouteBlue500 else Slate800,
                                     contentColor = Color.White
                                 ),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).heightIn(min = 40.dp)
                             ) {
-                                Text("📱 Free", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("📱 Free", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
 
                             Button(
@@ -305,14 +318,15 @@ fun ProfileScreen(
                                     UserRepository.setOwnerOverrideMode(context, UserRepository.OWNER_MODE_AUTO)
                                     coroutineScope.launch { snackbarHostState.showSnackbar("🔄 Modo Automático activado.") }
                                 },
+                                contentPadding = PaddingValues(horizontal = 6.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (ownerOverrideMode == UserRepository.OWNER_MODE_AUTO) SafetyGreen500 else Slate800,
                                     contentColor = if (ownerOverrideMode == UserRepository.OWNER_MODE_AUTO) Color.Black else Color.White
                                 ),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).heightIn(min = 40.dp)
                             ) {
-                                Text("🔄 Auto", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("🔄 Auto", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -363,7 +377,10 @@ fun ProfileScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Surface(
                                 shape = CircleShape,
                                 color = if (isProActive) Amber500.copy(alpha = 0.2f) else RouteBlue500.copy(alpha = 0.2f),
@@ -379,12 +396,14 @@ fun ProfileScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = if (isProActive) "VíaAlerta PRO Activo" else "Modo Freemium",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Black,
-                                    color = if (isProActive) Amber400 else Color.White
+                                    color = if (isProActive) Amber400 else Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = if (isProActive && remainingTrialDays > 0) "Bono bienvenida: te quedan $remainingTrialDays días"
@@ -395,6 +414,8 @@ fun ProfileScreen(
                                 )
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         Surface(
                             color = if (isProActive) Amber500.copy(alpha = 0.2f) else Slate800,
@@ -409,7 +430,8 @@ fun ProfileScreen(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isProActive) Amber400 else Color.White.copy(alpha = 0.8f)
+                                color = if (isProActive) Amber400 else Color.White.copy(alpha = 0.8f),
+                                maxLines = 1
                             )
                         }
                     }
@@ -435,7 +457,10 @@ fun ProfileScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Surface(
                                 shape = CircleShape,
                                 color = SafetyGreen500.copy(alpha = 0.2f),
@@ -451,26 +476,33 @@ fun ProfileScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Mis Puntos Ruta",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = "$todayPoints / $maxDaily pts acumulados hoy (Tope)",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
                             text = "$userPoints pts",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Black,
-                            color = SafetyGreen500
+                            color = SafetyGreen500,
+                            maxLines = 1
                         )
                     }
 
@@ -563,18 +595,21 @@ fun ProfileScreen(
                                 border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) Amber400 else Slate700),
                                 modifier = Modifier
                                     .weight(1f)
+                                    .heightIn(min = 38.dp)
                                     .clickable {
                                         speedPercent = pct
                                         DriverPreferences.setSpeedCalibrationPercent(context, pct)
                                     }
                                     .testTag("speed_preset_$pct")
                             ) {
-                                Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                Box(modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
                                     Text(
                                         text = label,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (selected) Color.Black else Color.White
+                                        color = if (selected) Color.Black else Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -653,19 +688,21 @@ fun ProfileScreen(
                                 border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) Color.White else Slate700),
                                 modifier = Modifier
                                     .weight(1f)
+                                    .heightIn(min = 38.dp)
                                     .clickable {
                                         nightModePref = mode
                                         DriverPreferences.setNightModePreference(context, mode)
                                     }
                                     .testTag("night_mode_opt_$mode")
                             ) {
-                                Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                Box(modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
                                     Text(
                                         text = label,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -802,8 +839,9 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = defaultVehicle,
                     onValueChange = { defaultVehicle = it },
-                    label = { Text("Vehículo Habitual") },
+                    label = { Text("Vehículo Habitual", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     placeholder = { Text("Ej: Ford Ranger", color = Color.White.copy(alpha = 0.35f)) },
+                    singleLine = true,
                     modifier = Modifier.weight(1.2f).testTag("profile_vehicle_input"),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Amber500,
@@ -815,8 +853,9 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = defaultPlate,
                     onValueChange = { defaultPlate = it },
-                    label = { Text("Patente / Dominio") },
+                    label = { Text("Patente / Dominio", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     placeholder = { Text("Ej: AF 123 CD", color = Color.White.copy(alpha = 0.35f)) },
+                    singleLine = true,
                     modifier = Modifier.weight(0.8f).testTag("profile_plate_input"),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Amber500,
@@ -926,6 +965,8 @@ fun ProfileScreen(
                                     }
                                 }
 
+                                Spacer(modifier = Modifier.width(8.dp))
+
                                 Button(
                                     onClick = {
                                         coroutineScope.launch {
@@ -933,22 +974,25 @@ fun ProfileScreen(
                                             snackbarHostState.showSnackbar("🗑️ Reporte eliminado del mapa.")
                                         }
                                     },
+                                    contentPadding = PaddingValues(horizontal = 10.dp),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = AlertRed500,
                                         contentColor = Color.White
                                     ),
                                     shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.testTag("delete_my_alert_${alert.id}")
+                                    modifier = Modifier.heightIn(min = 38.dp).testTag("delete_my_alert_${alert.id}")
                                 ) {
                                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Eliminar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Eliminar", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                                 }
                             }
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Viral App Sharing Card
             Surface(

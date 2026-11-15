@@ -10,11 +10,15 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DirectionsCar
@@ -43,6 +48,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.HitchhikeRequest
@@ -72,6 +79,7 @@ import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import com.example.ui.theme.Slate950
 import com.example.util.LocationRadarManager
+import com.example.util.RoadRoutingManager
 import kotlinx.coroutines.launch
 
 private fun shareViaWhatsApp(context: Context, text: String) {
@@ -109,12 +117,31 @@ fun HitchhikeScreen(
     // Segmented tab: 0 -> Hacer Dedo, 1 -> Conductor, 2 -> SOS Varado
     var selectedSegment by remember { mutableIntStateOf(0) }
 
-    // Form state (matches Screenshot 2)
+    // Form state
     var destinationInput by remember { mutableStateOf("") }
     var selectedCommonPoint by remember { mutableStateOf("") }
     var selectedActivityRole by remember { mutableStateOf("") }
     var noteInput by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
+
+    val gpsPointLabel = "Mi ubicación actual por GPS"
+    var resolvedGpsPickup by remember { mutableStateOf("") }
+    var isResolvingGpsPickup by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedCommonPoint, driverLoc.latitude, driverLoc.longitude) {
+        if (selectedCommonPoint == gpsPointLabel) {
+            isResolvingGpsPickup = true
+            try {
+                resolvedGpsPickup = RoadRoutingManager.describeLocationWithNearestTown(
+                    context = context,
+                    lat = driverLoc.latitude,
+                    lng = driverLoc.longitude
+                )
+            } finally {
+                isResolvingGpsPickup = false
+            }
+        }
+    }
 
     // Driver QR pairing dialog state
     var selectedHitchhikeForPairing by remember { mutableStateOf<HitchhikeRequest?>(null) }
@@ -125,7 +152,7 @@ fun HitchhikeScreen(
             Pair("🚏", "Garita en rotonda de salida de la ciudad"),
             Pair("🏫", "Frente a escuela rural sobre ruta"),
             Pair("🌉", "Cruce de rutas / bajada de puente"),
-            Pair("📍", "Mi ubicación actual por GPS")
+            Pair("📍", gpsPointLabel)
         )
     }
 
@@ -219,7 +246,7 @@ fun HitchhikeScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // 3-Segmented Button Bar: [🙋 Hacer Dedo] | [🚗 Conductor] | [🔴🚨 SOS Varado]
+                    // 3-Segmented Button Bar: [🙋 Hacer Dedo] | [🚗 Conductor] | [🔴 SOS Varado]
                     Surface(
                         color = Slate950,
                         shape = RoundedCornerShape(24.dp),
@@ -230,26 +257,30 @@ fun HitchhikeScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             // 0: Hacer Dedo
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
+                                    .heightIn(min = 40.dp)
                                     .clickable { selectedSegment = 0 }
                                     .testTag("tab_hacer_dedo"),
                                 color = if (selectedSegment == 0) Amber400 else Color.Transparent,
                                 shape = RoundedCornerShape(20.dp)
                             ) {
                                 Box(
-                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "🙋 Hacer Dedo",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (selectedSegment == 0) Color.Black else Color.White
+                                        color = if (selectedSegment == 0) Color.Black else Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -258,20 +289,23 @@ fun HitchhikeScreen(
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
+                                    .heightIn(min = 40.dp)
                                     .clickable { selectedSegment = 1 }
                                     .testTag("tab_conductor"),
                                 color = if (selectedSegment == 1) Amber400 else Color.Transparent,
                                 shape = RoundedCornerShape(20.dp)
                             ) {
                                 Box(
-                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "🚗 Conductor",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (selectedSegment == 1) Color.Black else Color.White
+                                        color = if (selectedSegment == 1) Color.Black else Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -279,7 +313,8 @@ fun HitchhikeScreen(
                             // 2: SOS Varado
                             Surface(
                                 modifier = Modifier
-                                    .weight(1.1f)
+                                    .weight(1f)
+                                    .heightIn(min = 40.dp)
                                     .clickable {
                                         selectedSegment = 2
                                         onNavigateToSos()
@@ -289,14 +324,16 @@ fun HitchhikeScreen(
                                 shape = RoundedCornerShape(20.dp)
                             ) {
                                 Box(
-                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "🔴 SOS Varado",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -334,12 +371,17 @@ fun HitchhikeScreen(
                                             text = "PEDIDO DE AVENTÓN ACTIVO",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Black,
-                                            color = SafetyGreen500
+                                            color = SafetyGreen500,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
                                         )
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = "DNI: ${myActiveHitchhike.userDni}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = Amber400
+                                            color = Amber400,
+                                            maxLines = 1
                                         )
                                     }
 
@@ -391,8 +433,9 @@ fun HitchhikeScreen(
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(52.dp)
+                                            .heightIn(min = 50.dp)
                                             .testTag("hitchhike_resolve_btn"),
+                                        contentPadding = PaddingValues(horizontal = 12.dp),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = SafetyGreen500,
                                             contentColor = Color.Black
@@ -403,7 +446,9 @@ fun HitchhikeScreen(
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = "¡Ya me levantaron! Desactivar aviso",
-                                            fontWeight = FontWeight.Black
+                                            fontWeight = FontWeight.Black,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 
@@ -420,8 +465,9 @@ fun HitchhikeScreen(
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(46.dp)
+                                            .heightIn(min = 46.dp)
                                             .testTag("hitchhike_delete_btn"),
+                                        contentPadding = PaddingValues(horizontal = 12.dp),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = AlertRed500,
                                             contentColor = Color.White
@@ -431,7 +477,9 @@ fun HitchhikeScreen(
                                         Text(
                                             text = "🗑️ Eliminar Pedido (Prueba)",
                                             style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -569,6 +617,7 @@ fun HitchhikeScreen(
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         commonPoints.forEach { (emoji, label) ->
                                             val isSelected = selectedCommonPoint == label
+                                            val isGpsOption = label == gpsPointLabel
                                             Surface(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -581,18 +630,36 @@ fun HitchhikeScreen(
                                                     color = if (isSelected) Amber400 else Slate800
                                                 )
                                             ) {
-                                                Row(
-                                                    modifier = Modifier.padding(12.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(text = emoji, fontSize = 18.sp)
-                                                    Spacer(modifier = Modifier.width(10.dp))
-                                                    Text(
-                                                        text = label,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                        color = if (isSelected) Amber400 else Color.White
-                                                    )
+                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(text = emoji, fontSize = 18.sp)
+                                                        Spacer(modifier = Modifier.width(10.dp))
+                                                        Text(
+                                                            text = label,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                            color = if (isSelected) Amber400 else Color.White
+                                                        )
+                                                    }
+                                                    if (isSelected && isGpsOption) {
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text(
+                                                            text = when {
+                                                                isResolvingGpsPickup -> "⏳ Calculando localidad o paraje más cercano..."
+                                                                resolvedGpsPickup.isNotBlank() -> resolvedGpsPickup
+                                                                else -> String.format(
+                                                                    java.util.Locale.US,
+                                                                    "Coordenadas: %.4f, %.4f",
+                                                                    driverLoc.latitude,
+                                                                    driverLoc.longitude
+                                                                )
+                                                            },
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = SafetyGreen500,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            modifier = Modifier.padding(start = 28.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -712,11 +779,22 @@ fun HitchhikeScreen(
 
                                             isSubmitting = true
                                             coroutineScope.launch {
+                                                val finalPickupPoint = if (selectedCommonPoint == gpsPointLabel) {
+                                                    resolvedGpsPickup.ifBlank {
+                                                        RoadRoutingManager.describeLocationWithNearestTown(
+                                                            context = context,
+                                                            lat = driverLoc.latitude,
+                                                            lng = driverLoc.longitude
+                                                        )
+                                                    }
+                                                } else {
+                                                    selectedCommonPoint
+                                                }
                                                 val result = hitchhikeRepository.createHitchhike(
                                                     userName = userProfile?.name?.ifBlank { "Pasajero Verificado" } ?: "Pasajero Verificado",
                                                     userDni = userProfile?.dni?.ifBlank { "DNI Verificado" } ?: "DNI Verificado",
                                                     roleCategory = selectedActivityRole.ifBlank { "Pasajero General" },
-                                                    pickupPoint = selectedCommonPoint,
+                                                    pickupPoint = finalPickupPoint,
                                                     destination = destinationInput,
                                                     latitude = driverLoc.latitude,
                                                     longitude = driverLoc.longitude
@@ -731,7 +809,7 @@ fun HitchhikeScreen(
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(52.dp)
+                                            .heightIn(min = 52.dp)
                                             .testTag("publish_hitchhike_btn"),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = Color(0xFFFBBF24),
@@ -743,7 +821,9 @@ fun HitchhikeScreen(
                                         Text(
                                             text = if (isSubmitting) "Publicando..." else "Publicar pedido de aventón en el mapa",
                                             style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Black
+                                            fontWeight = FontWeight.Black,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -816,6 +896,9 @@ fun HitchhikeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .imePadding()
+                        .verticalScroll(rememberScrollState())
                         .padding(24.dp)
                 ) {
                     Text(
@@ -905,8 +988,13 @@ private fun HitchhikeCard(
                     text = hitchhike.userName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Surface(
                     color = SafetyGreen500.copy(alpha = 0.2f),
@@ -917,7 +1005,9 @@ private fun HitchhikeCard(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = SafetyGreen500,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -945,9 +1035,10 @@ private fun HitchhikeCard(
             ) {
                 Button(
                     onClick = onOfferRide,
+                    contentPadding = PaddingValues(horizontal = 10.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .height(44.dp)
+                        .heightIn(min = 44.dp)
                         .testTag("offer_ride_btn_${hitchhike.id}"),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = SafetyGreen500,
@@ -957,13 +1048,20 @@ private fun HitchhikeCard(
                 ) {
                     Icon(Icons.Default.DirectionsCar, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Levantar y Vincular", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Levantar y Vincular",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
                 Button(
                     onClick = onDeleteHitchhike,
+                    contentPadding = PaddingValues(horizontal = 12.dp),
                     modifier = Modifier
-                        .height(44.dp)
+                        .heightIn(min = 44.dp)
                         .testTag("delete_ride_btn_${hitchhike.id}"),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = AlertRed500.copy(alpha = 0.8f),
@@ -971,7 +1069,13 @@ private fun HitchhikeCard(
                     ),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("🗑️ Descartar", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "🗑️ Descartar",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }

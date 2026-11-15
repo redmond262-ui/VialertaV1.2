@@ -9,11 +9,13 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -75,6 +78,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.HitchhikeRequest
@@ -98,6 +102,7 @@ import com.example.ui.theme.Slate950
 import com.example.util.DriverPreferences
 import com.example.util.LocationRadarManager
 import com.example.util.RoadRoutingManager
+import com.example.util.ViaAlertaRadarHolder
 import com.example.util.VoiceCopilotManager
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -173,6 +178,8 @@ fun MapScreen(
         label = "overlayControlsAlpha"
     )
 
+    val isForegroundServiceRunning by ViaAlertaRadarHolder.isForegroundServiceRunning.collectAsState()
+
     // Search, Destination and Filter State
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf<String?>(null) }
@@ -182,6 +189,7 @@ fun MapScreen(
     // Real Destination Search & Multi-Route Alternatives State
     var searchSuggestions by remember { mutableStateOf<List<SearchLocationResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+    var hasSearchedQuery by remember { mutableStateOf(false) }
     var selectedDestination by remember { mutableStateOf<SearchLocationResult?>(null) }
     var routeOptions by remember { mutableStateOf<List<RoadRoutingManager.RouteOption>>(emptyList()) }
     var selectedRouteIndex by remember { mutableIntStateOf(0) }
@@ -219,23 +227,23 @@ fun MapScreen(
         }
     }
 
-    // Geocoded destination search debouncer
-    LaunchedEffect(searchQuery) {
-        val q = searchQuery.trim()
+    suspend fun executeDestinationSearch(rawQuery: String) {
+        val q = rawQuery.trim()
         if (q.length < 2) {
             searchSuggestions = emptyList()
             isSearching = false
-            return@LaunchedEffect
+            hasSearchedQuery = false
+            return
         }
         isSearching = true
-        delay(300)
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val results = mutableListOf<SearchLocationResult>()
+        hasSearchedQuery = false
+        try {
+            val results = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val list = mutableListOf<SearchLocationResult>()
                 activeAlerts.filter {
                     it.roadName.contains(q, ignoreCase = true) || it.description.contains(q, ignoreCase = true)
                 }.take(2).forEach { alert ->
-                    results.add(
+                    list.add(
                         SearchLocationResult(
                             title = alert.roadName.ifBlank { "Alerta en Calzada" },
                             subtitle = "⚠️ ${alert.type.uppercase()} • ${alert.description.take(35)}",
@@ -246,9 +254,14 @@ fun MapScreen(
                         )
                     )
                 }
-                val places = RoadRoutingManager.searchPlaces(q, context)
+                val places = RoadRoutingManager.searchPlaces(
+                    query = q,
+                    context = context,
+                    biasLat = driverLocation.latitude,
+                    biasLon = driverLocation.longitude
+                )
                 places.forEach { place ->
-                    results.add(
+                    list.add(
                         SearchLocationResult(
                             title = place.title,
                             subtitle = place.subtitle,
@@ -257,16 +270,34 @@ fun MapScreen(
                         )
                     )
                 }
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    searchSuggestions = results
-                    isSearching = false
-                }
-            } catch (_: Throwable) {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    isSearching = false
-                }
+                list
             }
+            searchSuggestions = results
+            hasSearchedQuery = true
+        } catch (_: Throwable) {
+            hasSearchedQuery = true
+        } finally {
+            isSearching = false
         }
+    }
+
+    // Geocoded destination search debouncer
+    LaunchedEffect(searchQuery, selectedDestination) {
+        if (selectedDestination != null) {
+            isSearching = false
+            hasSearchedQuery = false
+            return@LaunchedEffect
+        }
+        val q = searchQuery.trim()
+        if (q.length < 2) {
+            searchSuggestions = emptyList()
+            isSearching = false
+            hasSearchedQuery = false
+            return@LaunchedEffect
+        }
+        isSearching = true
+        delay(320)
+        executeDestinationSearch(q)
     }
 
     // Track moving speed EMA exclusively while driving (>= 12 km/h)
@@ -435,22 +466,28 @@ fun MapScreen(
         activeAlerts.groupingBy { it.type }.eachCount()
     }
 
-    // Proximity Radar evaluation ticker - only speaks when actively driving (> 15 km/h) or simulating
-    LaunchedEffect(driverLocation, activeAlerts, isSimulatingDrive, isProEffective, currentUserId) {
-        locationRadarManager.checkProximityWarnings(
-            activeAlerts = activeAlerts,
-            isDriveMode = isSimulatingDrive || (driverLocation.speedKmH > 15f),
-            isProUser = isProEffective,
-            currentUserId = currentUserId
-        )
+    // Proximity Radar evaluation ticker - ForegroundService handles active driving alerts off-app; fallback here for guest/pre-FGS
+    LaunchedEffect(driverLocation, activeAlerts, isSimulatingDrive, isProEffective, currentUserId, isForegroundServiceRunning) {
+        if (!isForegroundServiceRunning || isGuestMode) {
+            locationRadarManager.checkProximityWarnings(
+                activeAlerts = activeAlerts,
+                isDriveMode = isSimulatingDrive || (driverLocation.speedKmH > 15f),
+                isProUser = isProEffective,
+                currentUserId = currentUserId
+            )
+        }
     }
 
-    // Drive simulation loop
+    // Keep background foreground service informed when user is in drive simulation mode
     LaunchedEffect(isSimulatingDrive) {
+        ViaAlertaRadarHolder.isDriveSimulationActive.value = isSimulatingDrive
         while (isSimulatingDrive) {
             delay(1200L)
             locationRadarManager.simulateDriveStep()
         }
+    }
+    DisposableEffect(Unit) {
+        onDispose { ViaAlertaRadarHolder.isDriveSimulationActive.value = false }
     }
 
     // Handle voice copilot hazard command directly on map with T0 reaction compensation + voice undo window
@@ -567,23 +604,33 @@ fun MapScreen(
                             modifier = Modifier.weight(1f).height(48.dp)
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = if (selectedDestination != null) Icons.Default.Place else Icons.Default.Search,
-                                    contentDescription = null,
-                                    tint = if (selectedDestination != null) Color(0xFF10B981) else Color.White.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(
+                                    onClick = {
+                                        if (selectedDestination == null && searchQuery.trim().length >= 2) {
+                                            coroutineScope.launch { executeDestinationSearch(searchQuery) }
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp).testTag("map_search_trigger_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = if (selectedDestination != null) Icons.Default.Place else Icons.Default.Search,
+                                        contentDescription = "Buscar destino",
+                                        tint = if (selectedDestination != null) Color(0xFF10B981) else Amber400,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                                     if (searchQuery.isEmpty()) {
                                         Text(
                                             text = "Buscar destino o ruta...",
                                             color = Color.White.copy(alpha = 0.45f),
                                             fontSize = 13.sp,
-                                            maxLines = 1
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                     BasicTextField(
@@ -605,34 +652,8 @@ fun MapScreen(
                                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                         keyboardActions = KeyboardActions(
                                             onSearch = {
-                                                val q = searchQuery.trim()
-                                                if (q.length >= 2) {
-                                                    isSearching = true
-                                                    coroutineScope.launch {
-                                                        try {
-                                                            val results = mutableListOf<SearchLocationResult>()
-                                                            activeAlerts.filter {
-                                                                it.roadName.contains(q, ignoreCase = true) || it.description.contains(q, ignoreCase = true)
-                                                            }.take(2).forEach { alert ->
-                                                                results.add(
-                                                                    SearchLocationResult(
-                                                                        title = alert.roadName.ifBlank { "Alerta en Calzada" },
-                                                                        subtitle = "⚠️ ${alert.type.uppercase()}",
-                                                                        latitude = alert.latitude,
-                                                                        longitude = alert.longitude,
-                                                                        isAlert = true,
-                                                                        alert = alert
-                                                                    )
-                                                                )
-                                                            }
-                                                            RoadRoutingManager.searchPlaces(q, context).forEach { place ->
-                                                                results.add(SearchLocationResult(place.title, place.subtitle, place.latitude, place.longitude))
-                                                            }
-                                                            searchSuggestions = results
-                                                        } finally {
-                                                            isSearching = false
-                                                        }
-                                                    }
+                                                if (searchQuery.trim().length >= 2) {
+                                                    coroutineScope.launch { executeDestinationSearch(searchQuery) }
                                                 }
                                             }
                                         ),
@@ -689,41 +710,69 @@ fun MapScreen(
                     }
 
                     // Autocomplete Suggestions Dropdown
-                    if (searchSuggestions.isNotEmpty() && selectedDestination == null) {
+                    if (selectedDestination == null && (searchSuggestions.isNotEmpty() || (hasSearchedQuery && !isSearching && searchQuery.trim().length >= 2))) {
                         Surface(
                             color = Slate900.copy(alpha = 0.98f),
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, Slate700),
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                         ) {
-                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                searchSuggestions.forEach { item ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                selectedRouteIndex = 0
-                                                hasNetworkRoute = false
-                                                selectedDestination = item
-                                                searchQuery = item.title
-                                                searchSuggestions = emptyList()
-                                                if (item.isAlert && item.alert != null) {
-                                                    selectedAlert = item.alert
+                            Column(
+                                modifier = Modifier
+                                    .heightIn(max = 260.dp)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                if (searchSuggestions.isEmpty()) {
+                                    Text(
+                                        text = "Sin resultados para \"${searchQuery.trim()}\". Probá sumar ciudad o provincia.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.65f),
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                                    )
+                                } else {
+                                    searchSuggestions.forEach { item ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    selectedRouteIndex = 0
+                                                    hasNetworkRoute = false
+                                                    hasSearchedQuery = false
+                                                    selectedDestination = item
+                                                    searchQuery = item.title
+                                                    searchSuggestions = emptyList()
+                                                    if (item.isAlert && item.alert != null) {
+                                                        selectedAlert = item.alert
+                                                    }
                                                 }
+                                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = if (item.isAlert) Icons.Default.Place else Icons.Default.Navigation,
+                                                contentDescription = null,
+                                                tint = if (item.isAlert) AlertRed500 else Color(0xFF10B981),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = item.title,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = item.subtitle,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color.White.copy(alpha = 0.65f),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
                                             }
-                                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = if (item.isAlert) Icons.Default.Place else Icons.Default.Navigation,
-                                            contentDescription = null,
-                                            tint = if (item.isAlert) AlertRed500 else Color(0xFF10B981),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                                            Text(item.subtitle, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.65f))
                                         }
                                     }
                                 }
@@ -889,9 +938,35 @@ fun MapScreen(
                                     }
                                 }
 
-                                // 3 Route Option Chips (only when OSRM returns >= 1 option)
-                                if (routeOptions.size > 1) {
+                                // Route Suggestions Strip (2–3 highway corridors or single direct fallback)
+                                if (isFetchingRoutes && routeOptions.isEmpty()) {
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color(0xFF38BDF8)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Buscando caminos sugeridos...",
+                                            fontSize = 11.sp,
+                                            color = Color.White.copy(alpha = 0.75f)
+                                        )
+                                    }
+                                } else if (routeOptions.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (routeOptions.size > 1) {
+                                            "Caminos sugeridos (${routeOptions.size}):"
+                                        } else {
+                                            "Camino sugerido:"
+                                        },
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White.copy(alpha = 0.68f)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -928,12 +1003,16 @@ fun MapScreen(
                                                         text = "${opt.label} • $optDur",
                                                         fontSize = 11.sp,
                                                         fontWeight = if (isSelectedOpt) FontWeight.Black else FontWeight.Bold,
-                                                        color = if (isSelectedOpt) Color(0xFF38BDF8) else Color.White
+                                                        color = if (isSelectedOpt) Color(0xFF38BDF8) else Color.White,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
                                                     )
                                                     Text(
                                                         text = "$optDist • ${if (optHazards > 0) "⚠️ $optHazards" else "✅ Libre"}",
                                                         fontSize = 10.sp,
-                                                        color = if (optHazards > 0) Amber400 else SafetyGreen500
+                                                        color = if (optHazards > 0) Amber400 else SafetyGreen500,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
                                             }
@@ -967,21 +1046,35 @@ fun MapScreen(
                                             containerColor = Color(0xFF10B981),
                                             contentColor = Color(0xFF0F172A)
                                         ),
+                                        contentPadding = PaddingValues(horizontal = 12.dp),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1f).height(40.dp).testTag("trace_route_action_btn")
+                                        modifier = Modifier.weight(1f).heightIn(min = 42.dp).testTag("trace_route_action_btn")
                                     ) {
                                         Icon(Icons.Default.Directions, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Iniciar Viaje", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                                        Text(
+                                            text = "Iniciar Viaje",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Black,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
 
                                     OutlinedButton(
                                         onClick = { fitRouteTrigger++ },
+                                        contentPadding = PaddingValues(horizontal = 12.dp),
                                         shape = RoundedCornerShape(10.dp),
                                         border = BorderStroke(1.dp, Slate700),
-                                        modifier = Modifier.height(40.dp)
+                                        modifier = Modifier.heightIn(min = 42.dp)
                                     ) {
-                                        Text("Ver Ruta", fontSize = 11.sp, color = Color.White)
+                                        Text(
+                                            text = "Ver Ruta",
+                                            fontSize = 11.sp,
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
 
@@ -1120,7 +1213,7 @@ fun MapScreen(
             }
         }
 
-        // Live Voice Feedback Chip on Map when listening
+        // Live Voice Feedback Chip on Map when listening (clear of bottom-left mic & speedometer)
         if (isVoiceListening && !isGuestMode) {
             Surface(
                 color = Slate950.copy(alpha = 0.94f),
@@ -1128,13 +1221,15 @@ fun MapScreen(
                 border = BorderStroke(1.5.dp, Amber400),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 90.dp, start = 20.dp, end = 20.dp)
+                    .padding(bottom = 200.dp, start = 20.dp, end = 20.dp)
             ) {
                 Text(
                     text = voiceStatusMessage,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Amber400,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                 )
             }
@@ -1160,7 +1255,9 @@ fun MapScreen(
                 Spacer(modifier = Modifier.size(8.dp))
                 Text(
                     text = if (isGuestMode) "Activar Alertas (Google)" else "Reportar Peligro",
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -1312,8 +1409,7 @@ fun MapScreen(
                             showExitTripDialog = false
                             try {
                                 com.example.util.RoadRadarForegroundService.stop(context)
-                                locationRadarManager.stopContinuousTracking()
-                                voiceCopilotManager.destroy()
+                                ViaAlertaRadarHolder.shutdown()
                             } catch (_: Throwable) {}
                             (context as? android.app.Activity)?.finishAffinity()
                             java.lang.System.exit(0)
