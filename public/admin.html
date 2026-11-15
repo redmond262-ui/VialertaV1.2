@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VíaAlerta • Panel Maestro Web</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg: #020617;
+      --surface: #0f172a;
+      --surface-2: #1e293b;
+      --border: #334155;
+      --amber: #f59e0b;
+      --amber-light: #fbbf24;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #38bdf8;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+    }
+    .hidden { display: none !important; }
+    .login-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: radial-gradient(circle at top, rgba(245,158,11,0.14), transparent 55%), var(--bg);
+    }
+    .login-card {
+      width: 100%;
+      max-width: 460px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 36px 28px;
+      text-align: center;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      background: rgba(245,158,11,0.16);
+      color: var(--amber-light);
+      border: 1px solid rgba(245,158,11,0.45);
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform .15s ease, opacity .15s ease;
+    }
+    .btn:hover { opacity: 0.92; transform: translateY(-1px); }
+    .btn:active { transform: scale(0.98); }
+    .btn-google {
+      width: 100%;
+      background: #ffffff;
+      color: #0f172a;
+      font-size: 15px;
+      padding: 14px 20px;
+      margin-top: 22px;
+    }
+    .btn-amber { background: var(--amber); color: #020617; }
+    .btn-green { background: rgba(34,197,94,0.18); color: var(--green); border: 1px solid rgba(34,197,94,0.45); }
+    .btn-red { background: rgba(239,68,68,0.18); color: var(--red); border: 1px solid rgba(239,68,68,0.45); }
+    .btn-blue { background: rgba(56,189,248,0.16); color: var(--blue); border: 1px solid rgba(56,189,248,0.45); }
+    .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .btn-sm { padding: 7px 11px; font-size: 12px; border-radius: 9px; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: rgba(2,6,23,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--surface-2);
+      padding: 14px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon {
+      width: 40px; height: 40px; border-radius: 12px;
+      background: linear-gradient(135deg, #fbbf24, #d97706);
+      color: #020617; font-weight: 900; font-size: 18px;
+      display: grid; place-items: center;
+    }
+    .container { max-width: 1380px; margin: 0 auto; padding: 22px; }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-2);
+      border-radius: 16px;
+      padding: 16px 18px;
+    }
+    .kpi-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; }
+    .kpi-value { font-size: 32px; font-weight: 900; margin: 6px 0 2px; }
+    .kpi-sub { font-size: 12px; color: var(--muted); }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    .tab-btn {
+      background: var(--surface);
+      color: var(--muted);
+      border: 1px solid var(--surface-2);
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: rgba(245,158,11,0.18);
+      color: var(--amber-light);
+      border-color: var(--amber);
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-2);
+      border-radius: 18px;
+      padding: 18px;
+    }
+    .panel-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .panel-title { margin: 0; font-size: 17px; font-weight: 800; }
+    input, select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: var(--amber); }
+
+    #live-map {
+      width: 100%;
+      height: 490px;
+      border-radius: 14px;
+      border: 1px solid var(--surface-2);
+      background: #0b1120;
+    }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 10px;
+      border-bottom: 1px solid var(--surface-2);
+      vertical-align: middle;
+    }
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .tag {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .tag-green { background: rgba(34,197,94,0.16); color: var(--green); }
+    .tag-amber { background: rgba(245,158,11,0.16); color: var(--amber-light); }
+    .tag-red { background: rgba(239,68,68,0.16); color: var(--red); }
+    .tag-blue { background: rgba(56,189,248,0.16); color: var(--blue); }
+    .tag-slate { background: var(--surface-2); color: var(--muted); }
+    .alert-box {
+      margin-top: 16px;
+      background: rgba(239,68,68,0.14);
+      border: 1px solid rgba(239,68,68,0.5);
+      color: #fecaca;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 13px;
+      text-align: left;
+    }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 999;
+      background: var(--surface);
+      border: 1px solid var(--amber);
+      color: var(--text);
+      padding: 12px 18px;
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+      font-size: 13px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- AUTH GATE -->
+  <div id="auth-view" class="login-wrap">
+    <div class="login-card">
+      <div class="pill">🛡️ CENTRO DE CONTROL MAESTRO</div>
+      <h1 style="margin: 16px 0 6px; font-size: 26px;">VíaAlerta Web Admin</h1>
+      <p style="color: var(--muted); font-size: 14px; margin: 0 0 10px; line-height: 1.5;">
+        Iniciá sesión con tu misma cuenta administradora de la app (<strong>redmond262@gmail.com</strong>) para controlar alertas, conductores en vivo, Baúl Vial, SOS y licencias PRO en tiempo real.
+      </p>
+
+      <button id="btn-google-login" class="btn btn-google">
+        <span style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#4285f4;color:#fff;font-weight:900;font-size:13px;">G</span>
+        Iniciar Sesión con Google
+      </button>
+
+      <div id="auth-error" class="alert-box hidden"></div>
+
+      <div style="margin-top:18px;font-size:12px;color:var(--muted);">
+        Conectado al proyecto Firebase <code>gen-lang-client-0699193083</code>
+      </div>
+      <div style="margin-top:10px;">
+        <a href="/index.html" style="color:var(--amber-light);font-size:12px;text-decoration:none;">← Volver a descarga de APK</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard-view" class="hidden">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon">VA</div>
+        <div>
+          <div style="font-weight:900;font-size:17px;">VíaAlerta • Panel Web Maestro</div>
+          <div id="admin-email-badge" style="font-size:12px;color:var(--green);font-weight:600;"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span class="pill" style="background:rgba(34,197,94,0.14);color:var(--green);border-color:rgba(34,197,94,0.4);">● SINCRONIZADO EN VIVO</span>
+        <a href="/index.html" class="btn btn-ghost btn-sm" style="text-decoration:none;">📱 Descargar APK</a>
+        <button id="btn-logout" class="btn btn-red btn-sm">Cerrar Sesión</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- KPI GRID -->
+      <section class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Conductores Online</div>
+          <div class="kpi-value" id="kpi-drivers" style="color:var(--green)">0</div>
+          <div class="kpi-sub" id="kpi-driving">0 circulando ahora</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Alertas Activas</div>
+          <div class="kpi-value" id="kpi-alerts" style="color:var(--red)">0</div>
+          <div class="kpi-sub" id="kpi-potholes">0 pozos críticos (&ge;15cm)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Emergencias SOS</div>
+          <div class="kpi-value" id="kpi-sos" style="color:var(--amber-light)">0</div>
+          <div class="kpi-sub" id="kpi-hitchhikes">0 aventones esperando</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Baúl Vial</div>
+          <div class="kpi-value" id="kpi-baul" style="color:var(--blue)">0</div>
+          <div class="kpi-sub" id="kpi-baul-claims">0 reclamos pendientes</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Usuarios Registrados</div>
+          <div class="kpi-value" id="kpi-users" style="color:#c084fc">0</div>
+          <div class="kpi-sub" id="kpi-pro-users">0 con plan PRO activo</div>
+        </div>
+      </section>
+
+      <!-- TABS -->
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="map">🗺️ Mapa Nacional en Vivo</button>
+        <button class="tab-btn" data-tab="alerts">⚠️ Alertas y Baches</button>
+        <button class="tab-btn" data-tab="drivers">🚗 Conductores Online</button>
+        <button class="tab-btn" data-tab="users">👥 Usuarios y PRO / Freemium</button>
+        <button class="tab-btn" data-tab="baul">🧳 Baúl Vial</button>
+        <button class="tab-btn" data-tab="sos">🚨 SOS y Aventones</button>
+      </nav>
+
+      <!-- TAB: MAP -->
+      <section id="tab-map" class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Mapa Nacional en Tiempo Real</h2>
+            <div style="font-size:12px;color:var(--muted);">🟢 Conductores · 🔴 Alertas/Pozos · 🟠 SOS · 🔵 Baúl Vial</div>
+          </div>
+          <button id="btn-fit-map" class="btn btn-ghost btn-sm">Encuadrar Argentina</button>
+        </div>
+        <div id="live-map"></div>
+      </section>
+
+      <!-- TAB: ALERTS -->
+      <section id="tab-alerts" class="panel hidden">
+        <div class="panel-header">
+          <h2 class="panel-title">Moderación de Alertas y Baches</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="text" id="filter-alerts" placeholder="Buscar por ruta o descripción..." />
+            <select id="filter-alert-status">
+              <option value="all">Todas</option>
+              <option value="active" selected>Activas</option>
+              <option value="resolved">Resueltas</option>
+            </select>
+            <button id="btn-clean-tests" class="btn btn-blue btn-sm">🧹 Limpiar Tests/Pruebas</button>
+            <button id="btn-purge-resolved" class="btn btn-ghost btn-sm">🗑️ Purgar Resueltas</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Ruta / Ubicación</th>
+                <th>Detalle</th>
+                <th>Confirmaciones</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-alerts"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB: DRIVERS -->
+      <section id="tab-drivers" class="panel hidden">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Conductores Transmitiendo Telemetría en Vivo</h2>
+            <span style="font-size:12px;color:var(--muted);">Latidos GPS cada 25s (activos &lt; 2m 30s)</span>
+          </div>
+          <button id="btn-clean-stale-drivers" class="btn btn-ghost btn-sm">🧹 Limpiar inactivos (&gt;2.5m)</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Conductor</th>
+                <th>Ruta Actual</th>
+                <th>Estado / Velocidad</th>
+                <th>Coordenadas</th>
+                <th>Último Latido</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-drivers"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB: USERS -->
+      <section id="tab-users" class="panel hidden">
+        <div class="panel-header">
+          <h2 class="panel-title">Gestión de Usuarios, DNI y Licencias PRO / Freemium</h2>
+          <input type="text" id="filter-users" placeholder="Buscar por nombre, email o patente..." />
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Conductor / Email</th>
+                <th>DNI / Vehículo</th>
+                <th>Plan Actual</th>
+                <th>Puntos Ruta</th>
+                <th>Control PRO / Verificación</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-users"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB: BAUL VIAL -->
+      <section id="tab-baul" class="panel hidden">
+        <div class="panel-header">
+          <h2 class="panel-title">Baúl Vial • Objetos Encontrados y Extravíos</h2>
+          <select id="filter-baul-type">
+            <option value="all">Todos</option>
+            <option value="encontrado">Encontrados</option>
+            <option value="perdido">Extravíos</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Título / Ruta</th>
+                <th>Pregunta de Seguridad</th>
+                <th>Reclamo</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-baul"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB: SOS & HITCHHIKES -->
+      <section id="tab-sos" class="panel hidden">
+        <div class="panel-header">
+          <h2 class="panel-title">Emergencias SOS y Pedidos de Aventón Seguro</h2>
+        </div>
+        <h3 style="font-size:14px;color:var(--amber-light);margin:4px 0 10px;">🚨 Auxilio SOS</h3>
+        <div class="table-wrap" style="margin-bottom:22px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Conductor / DNI</th>
+                <th>Vehículo / Patente</th>
+                <th>Asistencia</th>
+                <th>Ubicación</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-sos"></tbody>
+          </table>
+        </div>
+
+        <h3 style="font-size:14px;color:var(--green);margin:10px 0;">👍 Aventones</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pasajero / Rol</th>
+                <th>Origen → Destino</th>
+                <th>Patente Vinculada</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-hitchhikes"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+      signOut,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      doc,
+      onSnapshot,
+      updateDoc,
+      deleteDoc,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+    const ADMIN_EMAIL = "redmond262@gmail.com";
+    const DATABASE_ID = "ai-studio-android-vaalerta-3533dd73-4db6-41b5-819b-be628adc8d93";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBQttE7Xh8DHq1y2tGSrjU9CJxtX7nW_wA",
+      authDomain: "gen-lang-client-0699193083.firebaseapp.com",
+      projectId: "gen-lang-client-0699193083",
+      storageBucket: "gen-lang-client-0699193083.firebasestorage.app",
+      messagingSenderId: "240787858654",
+      appId: "1:240787858654:android:11ea09f0ab7834927d0e4f"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app, DATABASE_ID);
+
+    const state = {
+      alerts: [],
+      drivers: [],
+      users: [],
+      baul: [],
+      sos: [],
+      hitchhikes: [],
+      unsubs: [],
+      map: null,
+      markerLayer: null
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    if (window.location.protocol === "file:") {
+      const box = $("auth-error");
+      box.innerHTML = "<strong>Abriste el archivo directo (file://):</strong> El login de Google requiere servidor web local o HTTPS.<br><br>Ejecutá <strong>Abrir-Dashboard-Windows.bat</strong> (incluido en el ZIP) para abrirlo automáticamente en <code>http://localhost:8765/admin.html</code>.";
+      box.classList.remove("hidden");
+    }
+
+    function showToast(msg) {
+      const t = $("toast");
+      t.textContent = msg;
+      t.classList.remove("hidden");
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.classList.add("hidden"), 3200);
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function showAuthError(html) {
+      const box = $("auth-error");
+      box.innerHTML = html;
+      box.classList.remove("hidden");
+    }
+
+    $("btn-google-login").addEventListener("click", async () => {
+      $("auth-error").classList.add("hidden");
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (err) {
+        if (err.code === "auth/unauthorized-domain") {
+          const host = window.location.hostname;
+          showAuthError(
+            `<strong>Dominio aún no autorizado en Firebase Auth:</strong> <code>${escapeHtml(host)}</code><br><br>` +
+            `Abrí <strong>Firebase Console → Authentication → Settings → Authorized domains</strong> y agregá ese dominio (o usá localhost) para habilitar el popup de Google.`
+          );
+        } else {
+          showAuthError(`Error al iniciar sesión: ${escapeHtml(err.message || err.code)}`);
+        }
+      }
+    });
+
+    $("btn-logout").addEventListener("click", () => signOut(auth));
+
+    // Tabs switching
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const target = btn.dataset.tab;
+        ["map", "alerts", "drivers", "users", "baul", "sos"].forEach((name) => {
+          $(`tab-${name}`).classList.toggle("hidden", name !== target);
+        });
+        if (target === "map" && state.map) {
+          setTimeout(() => state.map.invalidateSize(), 120);
+        }
+      });
+    });
+
+    function initMap() {
+      if (state.map) return;
+      state.map = L.map("live-map").setView([-35.2, -59.5], 6);
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        attribution: "&copy; OpenStreetMap &copy; CARTO",
+        maxZoom: 19
+      }).addTo(state.map);
+      state.markerLayer = L.layerGroup().addTo(state.map);
+      $("btn-fit-map").addEventListener("click", () => {
+        state.map.setView([-35.2, -59.5], 6);
+      });
+    }
+
+    const PRESENCE_TTL_MS = 150000; // 2.5 minutos (igual que PresenceRepository.kt)
+    function isFreshDriver(d, now = Date.now()) {
+      return typeof d.timestampMillis === "number" && (now - d.timestampMillis) < PRESENCE_TTL_MS;
+    }
+
+    function refreshMapMarkers() {
+      if (!state.markerLayer) return;
+      state.markerLayer.clearLayers();
+      const now = Date.now();
+
+      state.drivers.filter((d) => isFreshDriver(d, now)).forEach((d) => {
+        if (typeof d.latitude !== "number" || typeof d.longitude !== "number" || (d.latitude === 0 && d.longitude === 0)) return;
+        const m = L.circleMarker([d.latitude, d.longitude], {
+          radius: 8, color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.85, weight: 2
+        });
+        m.bindPopup(`<strong>🚗 ${escapeHtml(d.userName || "Conductor")}</strong><br>${escapeHtml(d.routeName || "En ruta")}<br>${Math.round(d.speedKmH || 0)} km/h`);
+        m.addTo(state.markerLayer);
+      });
+
+      state.alerts.filter((a) => a.status === "active").forEach((a) => {
+        if (typeof a.latitude !== "number" || typeof a.longitude !== "number") return;
+        const m = L.circleMarker([a.latitude, a.longitude], {
+          radius: 7, color: "#ef4444", fillColor: "#f59e0b", fillOpacity: 0.9, weight: 2
+        });
+        m.bindPopup(`<strong>⚠️ ${escapeHtml(a.type)}</strong><br>${escapeHtml(a.roadName || "Ruta")}<br>${escapeHtml(a.description || "")}`);
+        m.addTo(state.markerLayer);
+      });
+
+      state.sos.filter((s) => s.status === "active").forEach((s) => {
+        if (typeof s.latitude !== "number" || typeof s.longitude !== "number") return;
+        const m = L.circleMarker([s.latitude, s.longitude], {
+          radius: 9, color: "#fff", fillColor: "#ef4444", fillOpacity: 1, weight: 2
+        });
+        m.bindPopup(`<strong>🚨 SOS ${escapeHtml(s.assistanceType)}</strong><br>${escapeHtml(s.ownerName)} • ${escapeHtml(s.licensePlate)}`);
+        m.addTo(state.markerLayer);
+      });
+
+      state.baul.filter((b) => b.status === "activo").forEach((b) => {
+        if (typeof b.latitude !== "number" || typeof b.longitude !== "number" || (b.latitude === 0 && b.longitude === 0)) return;
+        const m = L.circleMarker([b.latitude, b.longitude], {
+          radius: 7, color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 0.85, weight: 2
+        });
+        m.bindPopup(`<strong>🧳 Baúl Vial (${escapeHtml(b.type)})</strong><br>${escapeHtml(b.title)}<br>${escapeHtml(b.roadName)}`);
+        m.addTo(state.markerLayer);
+      });
+    }
+
+    function renderKpis() {
+      const activeAlerts = state.alerts.filter((a) => a.status === "active");
+      const criticalPotholes = activeAlerts.filter((a) => a.type === "pozo" && (a.depthCm || 0) >= 15);
+      const activeSos = state.sos.filter((s) => s.status === "active");
+      const waitingHitch = state.hitchhikes.filter((h) => h.status === "waiting");
+      const now = Date.now();
+      const liveDrivers = state.drivers.filter((d) => isFreshDriver(d, now));
+      const proUsers = state.users.filter((u) => u.isProUser && (!u.proExpiresAtMillis || u.proExpiresAtMillis > now));
+
+      $("kpi-drivers").textContent = liveDrivers.length;
+      $("kpi-driving").textContent = `${liveDrivers.filter((d) => d.isDriving).length} circulando ahora`;
+      $("kpi-alerts").textContent = activeAlerts.length;
+      $("kpi-potholes").textContent = `${criticalPotholes.length} pozos críticos (≥15cm)`;
+      $("kpi-sos").textContent = activeSos.length;
+      $("kpi-hitchhikes").textContent = `${waitingHitch.length} aventones esperando`;
+      $("kpi-baul").textContent = state.baul.filter((b) => b.status === "activo").length;
+      $("kpi-baul-claims").textContent = `${state.baul.filter((b) => b.claimStatus === "pendiente").length} reclamos pendientes`;
+      $("kpi-users").textContent = state.users.length;
+      $("kpi-pro-users").textContent = `${proUsers.length} con plan PRO activo`;
+    }
+
+    function renderAlerts() {
+      const q = $("filter-alerts").value.trim().toLowerCase();
+      const statusFilter = $("filter-alert-status").value;
+      const rows = state.alerts.filter((a) => {
+        if (statusFilter !== "all" && a.status !== statusFilter) return false;
+        if (!q) return true;
+        return (`${a.roadName || ""} ${a.description || ""} ${a.type || ""}`).toLowerCase().includes(q);
+      });
+
+      $("tbody-alerts").innerHTML = rows.length === 0
+        ? `<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:24px;">No hay alertas que coincidan con el filtro.</td></tr>`
+        : rows.map((a) => `
+          <tr>
+            <td><span class="tag tag-amber">${escapeHtml(a.type)}</span></td>
+            <td><strong>${escapeHtml(a.roadName || "Ruta sin nombre")}</strong><br><span style="color:var(--muted);font-size:11px;">${Number(a.latitude || 0).toFixed(4)}, ${Number(a.longitude || 0).toFixed(4)}</span></td>
+            <td>${escapeHtml(a.description || "-")}${a.depthCm ? ` <span style="color:var(--red);">(${a.depthCm} cm)</span>` : ""}</td>
+            <td>${a.confirmations || 1}</td>
+            <td><span class="tag ${a.status === "active" ? "tag-red" : "tag-green"}">${escapeHtml(a.status)}</span></td>
+            <td style="white-space:nowrap;">
+              ${a.status === "active" ? `<button class="btn btn-green btn-sm" onclick="window.__adminAction('resolveAlert','${escapeHtml(a.id)}')">Resolver</button>` : ""}
+              <button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','alerts','${escapeHtml(a.id)}')">Eliminar</button>
+            </td>
+          </tr>
+        `).join("");
+    }
+
+    function renderDrivers() {
+      const now = Date.now();
+      const sorted = [...state.drivers].sort((a, b) => (b.timestampMillis || 0) - (a.timestampMillis || 0));
+      $("tbody-drivers").innerHTML = sorted.length === 0
+        ? `<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:24px;">No hay conductores transmitiendo telemetría en este instante.</td></tr>`
+        : sorted.map((d) => {
+          const fresh = isFreshDriver(d, now);
+          const secs = d.timestampMillis ? Math.max(0, Math.round((now - d.timestampMillis) / 1000)) : 9999;
+          const ago = secs < 60 ? `hace ${secs}s` : secs < 3600 ? `hace ${Math.floor(secs / 60)}m` : `hace ${Math.floor(secs / 3600)}h`;
+          const statusBadge = !fresh
+            ? `<span class="tag tag-slate">⚫ Desconectado</span>`
+            : (d.isDriving ? `<span class="tag tag-green">🚗 ${Math.round(d.speedKmH || 0)} km/h</span>` : `<span class="tag tag-amber">🅿️ Detenido</span>`);
+          return `
+            <tr style="${fresh ? "" : "opacity:0.55;"}">
+              <td><strong>${escapeHtml(d.userName || "Conductor")}</strong></td>
+              <td>${escapeHtml(d.routeName || "Ruta")}</td>
+              <td>${statusBadge}</td>
+              <td style="font-size:12px;color:var(--muted);">${Number(d.latitude || 0).toFixed(4)}, ${Number(d.longitude || 0).toFixed(4)}</td>
+              <td style="color:var(--muted);">${ago}</td>
+              <td><button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','online_presence','${escapeHtml(d.id)}')">Limpiar</button></td>
+            </tr>
+          `;
+        }).join("");
+    }
+
+    function renderUsers() {
+      const q = $("filter-users").value.trim().toLowerCase();
+      const now = Date.now();
+      const rows = state.users.filter((u) => {
+        if (!q) return true;
+        return (`${u.name || ""} ${u.email || ""} ${u.defaultPlate || ""} ${u.dni || ""}`).toLowerCase().includes(q);
+      });
+
+      $("tbody-users").innerHTML = rows.length === 0
+        ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:24px;">No hay usuarios que coincidan.</td></tr>`
+        : rows.map((u) => {
+          const proActive = u.isProUser && (!u.proExpiresAtMillis || u.proExpiresAtMillis > now);
+          const daysLeft = u.proExpiresAtMillis > now ? Math.ceil((u.proExpiresAtMillis - now) / 86400000) : 0;
+          return `
+            <tr>
+              <td>
+                <strong>${escapeHtml(u.name || "Sin nombre")}</strong><br>
+                <span style="color:var(--muted);font-size:12px;">${escapeHtml(u.email || u.userId)}</span>
+              </td>
+              <td>
+                DNI: ${escapeHtml(u.dni || "-")} ${u.isDniVerified ? `<span class="tag tag-green">Verificado</span>` : `<span class="tag tag-slate">Sin verificar</span>`}<br>
+                <span style="color:var(--muted);font-size:12px;">${escapeHtml(u.defaultVehicle || "")} ${escapeHtml(u.defaultPlate || "")}</span>
+              </td>
+              <td>
+                ${proActive ? `<span class="tag tag-amber">🌟 PRO (${daysLeft > 0 ? `${daysLeft}d` : "Ilimitado"})</span>` : `<span class="tag tag-slate">📱 Freemium</span>`}
+              </td>
+              <td><strong>${u.pointsRuta || 0} pts</strong></td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 30)">+30d PRO</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.__adminAction('revokePro','${escapeHtml(u.id)}')">Pasar a Freemium</button>
+                <button class="btn btn-blue btn-sm" onclick="window.__adminAction('toggleDni','${escapeHtml(u.id)}', ${!u.isDniVerified})">${u.isDniVerified ? "Quitar DNI" : "Verificar DNI"}</button>
+              </td>
+            </tr>
+          `;
+        }).join("");
+    }
+
+    function renderBaul() {
+      const f = $("filter-baul-type").value;
+      const rows = state.baul.filter((b) => f === "all" || b.type === f);
+      $("tbody-baul").innerHTML = rows.length === 0
+        ? `<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:24px;">No hay avisos en Baúl Vial todavía.</td></tr>`
+        : rows.map((b) => `
+          <tr>
+            <td><span class="tag ${b.type === "encontrado" ? "tag-green" : "tag-amber"}">${escapeHtml(b.type)}</span></td>
+            <td><strong>${escapeHtml(b.title)}</strong><br><span style="color:var(--muted);font-size:12px;">${escapeHtml(b.roadName)} • ${escapeHtml(b.publisherName || "")}</span></td>
+            <td style="font-size:12px;">${escapeHtml(b.verificationQuestion)}</td>
+            <td><span class="tag tag-blue">${escapeHtml(b.claimStatus || "sin_reclamo")}</span></td>
+            <td><span class="tag ${b.status === "activo" ? "tag-amber" : "tag-green"}">${escapeHtml(b.status)}</span></td>
+            <td style="white-space:nowrap;">
+              ${b.status === "activo" ? `<button class="btn btn-green btn-sm" onclick="window.__adminAction('markBaulReturned','${escapeHtml(b.id)}')">Marcar Devuelto</button>` : ""}
+              <button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','baul_vial','${escapeHtml(b.id)}')">Eliminar</button>
+            </td>
+          </tr>
+        `).join("");
+    }
+
+    function renderSosAndHitchhikes() {
+      $("tbody-sos").innerHTML = state.sos.length === 0
+        ? `<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:18px;">Sin pedidos SOS registrados.</td></tr>`
+        : state.sos.map((s) => `
+          <tr>
+            <td><strong>${escapeHtml(s.ownerName)}</strong><br><span style="color:var(--muted);font-size:12px;">DNI ${escapeHtml(s.ownerDni)}</span></td>
+            <td>${escapeHtml(s.vehicleModel)}<br><span style="color:var(--amber-light);font-weight:700;">${escapeHtml(s.licensePlate)}</span></td>
+            <td><span class="tag tag-red">${escapeHtml(s.assistanceType)}</span></td>
+            <td style="font-size:12px;">${escapeHtml(s.routeDescription || "-")}</td>
+            <td><span class="tag ${s.status === "active" ? "tag-red" : "tag-green"}">${escapeHtml(s.status)}</span></td>
+            <td>
+              ${s.status === "active" ? `<button class="btn btn-green btn-sm" onclick="window.__adminAction('resolveSos','${escapeHtml(s.id)}')">Resolver</button>` : ""}
+              <button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','sos_requests','${escapeHtml(s.id)}')">Eliminar</button>
+            </td>
+          </tr>
+        `).join("");
+
+      $("tbody-hitchhikes").innerHTML = state.hitchhikes.length === 0
+        ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:18px;">Sin pedidos de aventón registrados.</td></tr>`
+        : state.hitchhikes.map((h) => `
+          <tr>
+            <td><strong>${escapeHtml(h.userName)}</strong> <span class="tag tag-blue">${escapeHtml(h.roleCategory)}</span></td>
+            <td>${escapeHtml(h.pickupPoint)} → <strong>${escapeHtml(h.destination)}</strong></td>
+            <td>${escapeHtml(h.pairedPlate || "-")}</td>
+            <td><span class="tag ${h.status === "waiting" ? "tag-amber" : "tag-green"}">${escapeHtml(h.status)}</span></td>
+            <td><button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','hitchhike_requests','${escapeHtml(h.id)}')">Eliminar</button></td>
+          </tr>
+        `).join("");
+    }
+
+    function renderAll() {
+      renderKpis();
+      renderAlerts();
+      renderDrivers();
+      renderUsers();
+      renderBaul();
+      renderSosAndHitchhikes();
+      refreshMapMarkers();
+    }
+
+    $("filter-alerts").addEventListener("input", renderAlerts);
+    $("filter-alert-status").addEventListener("change", renderAlerts);
+    $("filter-users").addEventListener("input", renderUsers);
+    $("filter-baul-type").addEventListener("change", renderBaul);
+
+    $("btn-clean-tests").addEventListener("click", async () => {
+      const testAlerts = state.alerts.filter((a) =>
+        `${a.roadName || ""} ${a.description || ""}`.toLowerCase().match(/test|prueba/)
+      );
+      for (const a of testAlerts) {
+        await deleteDoc(doc(db, "alerts", a.id));
+      }
+      showToast(`🧹 Eliminadas ${testAlerts.length} alertas de prueba`);
+    });
+
+    $("btn-purge-resolved").addEventListener("click", async () => {
+      const resolved = state.alerts.filter((a) => a.status === "resolved");
+      for (const a of resolved) {
+        await deleteDoc(doc(db, "alerts", a.id));
+      }
+      showToast(`🗑️ Purgadas ${resolved.length} alertas resueltas`);
+    });
+
+    $("btn-clean-stale-drivers").addEventListener("click", async () => {
+      const now = Date.now();
+      const stale = state.drivers.filter((d) => !isFreshDriver(d, now));
+      for (const d of stale) {
+        await deleteDoc(doc(db, "online_presence", d.id));
+      }
+      showToast(`🧹 Eliminados ${stale.length} registros de presencia inactivos`);
+    });
+
+    window.__adminAction = async (action, arg1, arg2) => {
+      try {
+        if (action === "resolveAlert") {
+          await updateDoc(doc(db, "alerts", arg1), { status: "resolved", updatedAt: serverTimestamp() });
+          showToast("✅ Alerta marcada como resuelta");
+        } else if (action === "resolveSos") {
+          await updateDoc(doc(db, "sos_requests", arg1), { status: "resolved", updatedAt: serverTimestamp() });
+          showToast("✅ SOS marcado como resuelto");
+        } else if (action === "markBaulReturned") {
+          await updateDoc(doc(db, "baul_vial", arg1), { status: "devuelto", updatedAt: serverTimestamp() });
+          showToast("✅ Baúl Vial marcado como devuelto");
+        } else if (action === "grantPro") {
+          const expiry = Date.now() + Number(arg2 || 30) * 86400000;
+          await updateDoc(doc(db, "users", arg1), { isProUser: true, proExpiresAtMillis: expiry, updatedAt: serverTimestamp() });
+          showToast(`🌟 PRO activado por ${arg2} días`);
+        } else if (action === "revokePro") {
+          await updateDoc(doc(db, "users", arg1), { isProUser: false, proExpiresAtMillis: Date.now() - 1000, updatedAt: serverTimestamp() });
+          showToast("📱 Usuario pasado a plan Freemium");
+        } else if (action === "toggleDni") {
+          await updateDoc(doc(db, "users", arg1), { isDniVerified: Boolean(arg2), updatedAt: serverTimestamp() });
+          showToast("🪪 Estado de verificación DNI actualizado");
+        } else if (action === "deleteDoc") {
+          if (!confirm(`¿Seguro que querés eliminar este registro de ${arg1}?`)) return;
+          await deleteDoc(doc(db, arg1, arg2));
+          showToast("🗑️ Registro eliminado");
+        }
+      } catch (e) {
+        console.error(e);
+        showToast(`⚠️ Error: ${e.message}`);
+      }
+    };
+
+    function subscribeRealtime() {
+      state.unsubs.forEach((u) => u());
+      const onErr = (name) => (err) => {
+        console.error(`Error escuchando ${name}:`, err);
+        showToast(`⚠️ Permiso/error en ${name}: ${err.message}`);
+      };
+      state.unsubs = [
+        onSnapshot(collection(db, "alerts"), (snap) => {
+          state.alerts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          renderAll();
+        }, onErr("alerts")),
+        onSnapshot(collection(db, "online_presence"), (snap) => {
+          state.drivers = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          renderAll();
+        }, onErr("online_presence")),
+        onSnapshot(collection(db, "users"), (snap) => {
+          state.users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          renderAll();
+        }, onErr("users")),
+        onSnapshot(collection(db, "baul_vial"), (snap) => {
+          state.baul = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          renderAll();
+        }, onErr("baul_vial")),
+        onSnapshot(collection(db, "sos_requests"), (snap) => {
+          state.sos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          renderAll();
+        }, onErr("sos_requests")),
+        onSnapshot(collection(db, "hitchhike_requests"), (snap) => {
+          state.hitchhikes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          renderAll();
+        }, onErr("hitchhike_requests"))
+      ];
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+      state.unsubs.forEach((u) => u());
+      state.unsubs = [];
+
+      if (!user) {
+        $("auth-view").classList.remove("hidden");
+        $("dashboard-view").classList.add("hidden");
+        return;
+      }
+
+      if ((user.email || "").toLowerCase().trim() !== ADMIN_EMAIL) {
+        await signOut(auth);
+        showAuthError(`Acceso denegado para <strong>${escapeHtml(user.email)}</strong>. Este panel web es exclusivo para <strong>${ADMIN_EMAIL}</strong>.`);
+        return;
+      }
+
+      $("auth-view").classList.add("hidden");
+      $("dashboard-view").classList.remove("hidden");
+      $("admin-email-badge").textContent = `Sesión verificada: ${user.email}`;
+      initMap();
+      subscribeRealtime();
+    });
+  </script>
+</body>
+</html>

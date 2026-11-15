@@ -1,0 +1,140 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with verified credentials and identity details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Auth UID" },
+        "name": { "type": "string", "description": "Full name" },
+        "email": { "type": "string", "description": "Email address" },
+        "dni": { "type": "string", "description": "Documento Nacional de Identidad" },
+        "isDniVerified": { "type": "boolean", "description": "Whether user DNI is verified" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "defaultVehicle": { "type": "string", "description": "Vehicle model and color" },
+        "defaultPlate": { "type": "string", "description": "Vehicle license plate" },
+        "trustRole": { "type": "string", "enum": ["docente", "estudiante", "salud", "policia", "trabajador", "general"], "description": "Trusted role badge" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userId", "name", "createdAt"]
+    },
+    "RoadAlert": {
+      "title": "Road Hazard Alert",
+      "description": "Collaborative road hazard and pothole alert reported by drivers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Document ID" },
+        "type": { "type": "string", "enum": ["pozo", "ruta_detonada", "neblina", "corte_obra", "animales", "vehiculo_averiado"], "description": "Hazard type" },
+        "depthCm": { "type": "integer", "description": "Pothole depth in centimeters" },
+        "roadName": { "type": "string", "description": "Route or highway name" },
+        "description": { "type": "string", "description": "Hazard description" },
+        "latitude": { "type": "number", "description": "GPS latitude" },
+        "longitude": { "type": "number", "description": "GPS longitude" },
+        "reporterUid": { "type": "string", "description": "Author user UID" },
+        "reporterName": { "type": "string", "description": "Author display name" },
+        "confirmations": { "type": "integer", "description": "Community confirmation votes" },
+        "status": { "type": "string", "enum": ["active", "resolved"], "description": "Alert status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["type", "latitude", "longitude", "reporterUid", "status", "createdAt"]
+    },
+    "SosRequest": {
+      "title": "SOS Mechanical Assistance Request",
+      "description": "Anti-ambush verified vehicle assistance request for broken down cars",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Document ID" },
+        "ownerUid": { "type": "string", "description": "Car owner UID" },
+        "ownerName": { "type": "string", "description": "Car owner full name" },
+        "ownerDni": { "type": "string", "description": "Verified DNI of owner" },
+        "dniVerified": { "type": "boolean", "description": "DNI verified badge" },
+        "vehicleModel": { "type": "string", "description": "Vehicle make and model (e.g. Fiat Cronos Rojo)" },
+        "vehicleColor": { "type": "string", "description": "Vehicle color" },
+        "licensePlate": { "type": "string", "description": "License plate / dominio" },
+        "assistanceType": { "type": "string", "enum": ["pinchadura", "bateria", "tren_delantero", "combustible", "temperatura", "otro"], "description": "Assistance needed" },
+        "routeDescription": { "type": "string", "description": "Highway stretch and kilometer" },
+        "latitude": { "type": "number", "description": "GPS latitude" },
+        "longitude": { "type": "number", "description": "GPS longitude" },
+        "phone": { "type": "string", "description": "WhatsApp contact phone" },
+        "status": { "type": "string", "enum": ["active", "resolved"], "description": "SOS status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["ownerUid", "ownerName", "ownerDni", "vehicleModel", "licensePlate", "assistanceType", "latitude", "longitude", "status", "createdAt"]
+    },
+    "HitchhikeRequest": {
+      "title": "Safe Hitchhike Request",
+      "description": "Verified hitchhiker request for rural teachers, students and workers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Document ID" },
+        "userUid": { "type": "string", "description": "Passenger UID" },
+        "userName": { "type": "string", "description": "Passenger full name" },
+        "userDni": { "type": "string", "description": "Passenger verified DNI" },
+        "roleCategory": { "type": "string", "enum": ["docente", "estudiante", "salud", "policia", "trabajador", "general"], "description": "Trust category" },
+        "pickupPoint": { "type": "string", "description": "Waiting spot (e.g. Garita Rotonda, Escuela Rural)" },
+        "destination": { "type": "string", "description": "Destination city or locality" },
+        "latitude": { "type": "number", "description": "GPS latitude" },
+        "longitude": { "type": "number", "description": "GPS longitude" },
+        "pairedPlate": { "type": "string", "description": "Linked vehicle plate via QR pairing" },
+        "status": { "type": "string", "enum": ["waiting", "picked_up"], "description": "Status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userUid", "userName", "userDni", "roleCategory", "pickupPoint", "destination", "latitude", "longitude", "status", "createdAt"]
+    },
+    "BaulVialItem": {
+      "title": "Baul Vial Lost and Found Item",
+      "description": "Roadside found or lost item with verification question for ownership proof",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Document ID" },
+        "type": { "type": "string", "enum": ["encontrado", "perdido"], "description": "Whether item was found or lost" },
+        "category": { "type": "string", "enum": ["patente", "documento", "billetera", "celular", "llaves", "equipaje", "mascota", "otro"], "description": "Item category" },
+        "title": { "type": "string", "description": "Public item title without revealing sensitive data" },
+        "publicDescription": { "type": "string", "description": "General description without sensitive numbers" },
+        "roadName": { "type": "string", "description": "Route, kilometer or town" },
+        "latitude": { "type": "number", "description": "GPS latitude" },
+        "longitude": { "type": "number", "description": "GPS longitude" },
+        "publisherUid": { "type": "string", "description": "Publisher user UID" },
+        "publisherName": { "type": "string", "description": "Publisher display name" },
+        "verificationQuestion": { "type": "string", "description": "Security question to confirm true ownership" },
+        "safeDropoffPlace": { "type": "string", "description": "Optional safe meeting or dropoff location" },
+        "claimantUid": { "type": "string", "description": "UID of claimant submitting verification answer" },
+        "claimantName": { "type": "string", "description": "Claimant display name" },
+        "claimantAnswer": { "type": "string", "description": "Verification answer provided by claimant" },
+        "claimantContact": { "type": "string", "description": "Claimant contact phone" },
+        "publisherContact": { "type": "string", "description": "Publisher phone revealed only when approved" },
+        "claimStatus": { "type": "string", "enum": ["sin_reclamo", "pendiente", "aprobado", "rechazado"], "description": "Verification workflow state" },
+        "status": { "type": "string", "enum": ["activo", "devuelto"], "description": "Publication status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["type", "category", "title", "roadName", "publisherUid", "verificationQuestion", "claimStatus", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and credentials"
+    },
+    "/alerts/{alertId}": {
+      "schema": "RoadAlert",
+      "description": "Community road hazard and pothole alerts"
+    },
+    "/sos_requests/{sosId}": {
+      "schema": "SosRequest",
+      "description": "Verified vehicle SOS emergency requests"
+    },
+    "/hitchhike_requests/{hitchhikeId}": {
+      "schema": "HitchhikeRequest",
+      "description": "Verified safe hitchhike requests"
+    },
+    "/baul_vial/{itemId}": {
+      "schema": "BaulVialItem",
+      "description": "Baul Vial community lost and found items"
+    }
+  }
+}

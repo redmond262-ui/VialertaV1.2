@@ -1,0 +1,6 @@
+{
+  "name": "VíaAlerta",
+  "description": "Red colaborativa de seguridad vial y alertas de baches para rutas argentinas con radar GPS y copiloto por voz v1.0",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
