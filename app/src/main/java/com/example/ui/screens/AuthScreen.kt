@@ -52,6 +52,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.NoCredentialException
 import com.example.R
 import com.example.ui.theme.AlertRed500
 import com.example.util.findActivity
@@ -339,14 +340,9 @@ fun onGoogleSignInClicked(
         return
     }
 
-    val googleIdOption = GetGoogleIdOption.Builder()
-        .setFilterByAuthorizedAccounts(false)
-        .setServerClientId(clientId)
-        .setAutoSelectEnabled(false)
-        .build()
-
-    val request = GetCredentialRequest.Builder()
-        .addCredentialOption(googleIdOption)
+    val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(clientId).build()
+    val primaryRequest = GetCredentialRequest.Builder()
+        .addCredentialOption(signInWithGoogleOption)
         .build()
 
     val activity = context.findActivity() ?: (context as? Activity)
@@ -357,7 +353,22 @@ fun onGoogleSignInClicked(
 
     scope.launch {
         try {
-            val result = credentialManager.getCredential(activity, request)
+            val result = try {
+                credentialManager.getCredential(activity, primaryRequest)
+            } catch (cancel: GetCredentialCancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                // Fallback to general Google ID picker if SignInWithGoogle sheet was unavailable
+                val fallbackOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(clientId)
+                    .setAutoSelectEnabled(false)
+                    .build()
+                val fallbackRequest = GetCredentialRequest.Builder()
+                    .addCredentialOption(fallbackOption)
+                    .build()
+                credentialManager.getCredential(activity, fallbackRequest)
+            }
             val credential = result.credential
             if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
@@ -370,6 +381,9 @@ fun onGoogleSignInClicked(
         } catch (e: GetCredentialCancellationException) {
             Log.w("Auth", "Google Sign-In cancelado por el usuario: ${e.message}")
             onAuthCancelled()
+        } catch (e: NoCredentialException) {
+            Log.e("Auth", "No credentials available en Google Sign-In", e)
+            onAuthError("No se encontraron credenciales de Google válidas (revisá que la firma SHA-1 del APK coincida con Firebase o que tengas una cuenta Google activa en el teléfono).")
         } catch (e: Exception) {
             Log.e("Auth", "Error al iniciar sesión con Google", e)
             onAuthError(e.localizedMessage ?: "Error de autenticación")
