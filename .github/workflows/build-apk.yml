@@ -17,16 +17,19 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Aceptar licencias e instalar SDK 36.1
+      - name: Aceptar licencias y preparar Android SDK
         run: |
-          SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> $GITHUB_ENV
           SDKMGR="$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1)"
+          if [ -z "$SDKMGR" ]; then
+            SDKMGR="$(command -v sdkmanager || true)"
+          fi
           if [ -n "$SDKMGR" ]; then
             yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
-            "$SDKMGR" "platforms;android-36.1" "build-tools;36.0.0" "platform-tools"
+            "$SDKMGR" --install "platform-tools" "build-tools;36.0.0" || true
+            "$SDKMGR" --install "platforms;android-36.1" || "$SDKMGR" --install "platforms;android-36" || true
           fi
 
       - name: Preparar keystore y entorno
