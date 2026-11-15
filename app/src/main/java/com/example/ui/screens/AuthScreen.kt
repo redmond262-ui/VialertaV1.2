@@ -284,8 +284,12 @@ fun attemptAutoSignIn(
         return
     }
     val clientId = try {
-        context.getString(R.string.default_web_client_id)
+        val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+        if (resId != 0) context.getString(resId) else ""
     } catch (e: Exception) {
+        ""
+    }
+    if (clientId.isBlank()) {
         onUnauthenticated()
         return
     }
@@ -325,8 +329,12 @@ fun onGoogleSignInClicked(
     onAuthCancelled: () -> Unit = {}
 ) {
     val clientId = try {
-        context.getString(R.string.default_web_client_id)
+        val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+        if (resId != 0) context.getString(resId) else ""
     } catch (e: Exception) {
+        ""
+    }
+    if (clientId.isBlank()) {
         onAuthError("Configuración de Google Sign-In faltante: default_web_client_id no encontrado")
         return
     }
