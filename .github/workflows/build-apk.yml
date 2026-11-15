@@ -20,10 +20,26 @@ jobs:
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Restaurar keystore de debug
+      - name: Aceptar licencias e instalar SDK 36.1
+        run: |
+          SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDKMGR="$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1)"
+          if [ -n "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+            "$SDKMGR" "platforms;android-36.1" "build-tools;36.0.0" "platform-tools"
+          fi
+
+      - name: Preparar keystore y entorno
         run: |
           if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
-            tr -d '\r\n' < debug.keystore.base64 | base64 -d > debug.keystore
+            tr -d '\r\n' < debug.keystore.base64 | base64 -d > debug.keystore || true
+          fi
+          if [ ! -s debug.keystore ]; then
+            rm -f debug.keystore
+            keytool -genkeypair -noprompt -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          if [ ! -f .env ]; then
+            touch .env
           fi
 
       - name: Configurar Gradle 9.3.1
@@ -32,7 +48,7 @@ jobs:
           gradle-version: '9.3.1'
 
       - name: Compilar APK Debug
-        run: gradle :app:assembleDebug --no-daemon
+        run: gradle :app:assembleDebug --no-daemon --console=plain
 
       - name: Subir APK descargable
         uses: actions/upload-artifact@v4
