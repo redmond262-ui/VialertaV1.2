@@ -411,7 +411,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                             is PendingVoicePrompt.ConfirmShakeImpact ->
                                 "🎙️ Esperando respuesta ('sí', 'no', 'central')..."
                             null ->
-                                "🎙️ Escuchando... Di 'bache', 'control', 'agua', 'obras'..."
+                                "🎙️ Escuchando... Di 'bache', 'radar', 'agua', 'obras'..."
                         }
                     }
 
@@ -631,11 +631,19 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             return
         }
 
+        if (isDisablePreTripReminderCommand(rawCandidates)) {
+            DriverPreferences.setPreTripChecklistEnabled(appContext, false)
+            speak("Recordatorio pre-viaje desactivado. Podés reactivarlo cuando quieras desde tu Perfil.", isWarning = false)
+            _copilotStatusMessage.value = "Chequeo pre-viaje desactivado por voz"
+            return
+        }
+
         // 2. Standard natural-language driving commands (checked across primary & fallback hypotheses)
         val anchor = lastSpeechAnchorMillis
         val matchText = normalized.firstOrNull { cand ->
             cand.contains("pozo") || cand.contains("bache") || cand.contains("crater") || cand.contains("hueco") ||
-                cand.contains("polic") || cand.contains("radar") || cand.contains("control") ||
+                cand.contains("polic") || cand.contains("gendarmer") || cand.contains("caminera") ||
+                cand.contains("radar") || cand.contains("fotomulta") || cand.contains("control de velocidad") ||
                 cand.contains("trabajo") || cand.contains("obra") || cand.contains("corte") || cand.contains("desvio") ||
                 cand.contains("agua") || cand.contains("humo") || cand.contains("niebla") || cand.contains("neblina") ||
                 cand.contains("detonada") || cand.contains("animal") || cand.contains("averiad") ||
@@ -653,6 +661,11 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                 speak("Alertas sonoras reactivadas.")
                 _copilotStatusMessage.value = "Alertas sonoras activas"
             }
+            matchText.contains("polic") || matchText.contains("gendarmer") || matchText.contains("caminera") ||
+                matchText.contains("control policial") || matchText.contains("operativo policial") -> {
+                speak("VíaAlerta no reporta controles policiales. Podés avisar radares de velocidad o peligros en ruta.", isWarning = false)
+                _copilotStatusMessage.value = "Controles policiales no admitidos (solo radares viales)"
+            }
             matchText.contains("bache central") || matchText.contains("pozo central") || matchText.contains("crater central") ||
             matchText.contains("en el centro") || matchText.contains("en el medio") || matchText.contains("ambos sentidos") ||
             matchText.contains("ambas manos") || matchText.contains("calzada en mal estado") -> {
@@ -666,11 +679,10 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                 _copilotStatusMessage.value = "¡Bache publicado! (Decí 'cancelar' para anular)"
                 onHazardCommandDetected?.invoke("pozo", 18, "Bache / Pozo Profundo", false, anchor)
             }
-            matchText.contains("polic") || matchText.contains("radar") || matchText.contains("fotomulta") ||
-            matchText.contains("gendarmer") || matchText.contains("caminera") || matchText.contains("control") -> {
-                speak("Control vial o radar publicado adelante. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
-                _copilotStatusMessage.value = "¡Control / Radar publicado!"
-                onHazardCommandDetected?.invoke("control_radar", 0, "Control / Radar Vial", true, anchor)
+            matchText.contains("radar") || matchText.contains("fotomulta") || matchText.contains("control de velocidad") -> {
+                speak("Radar vial de velocidad publicado adelante. Decí cancelar si fue un error.", isWarning = true, listenImmediatelyAfter = true)
+                _copilotStatusMessage.value = "¡Radar vial publicado!"
+                onHazardCommandDetected?.invoke("control_radar", 0, "Radar Vial / Velocidad", true, anchor)
             }
             matchText.contains("trabajo") || matchText.contains("obra") || matchText.contains("personal") ||
             matchText.contains("cuadrilla") || matchText.contains("obrero") || matchText.contains("maquina") -> {
@@ -725,11 +737,11 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                 onHazardCommandDetected?.invoke("semaforo", 0, "Semáforo Apagado", true, anchor)
             }
             matchText.contains("hola") || matchText.contains("ayuda") || matchText.contains("copiloto") -> {
-                speak("Copiloto listo. Decí: pozo, control, trabajos, agua, animales o niebla.", isWarning = false, listenImmediatelyAfter = true)
+                speak("Copiloto listo. Decí: pozo, radar, trabajos, agua, animales o niebla.", isWarning = false, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "Copiloto listo para escuchar"
             }
             else -> {
-                speak("No te entendí. Podés decir: pozo, control, trabajos, agua o animales.", isWarning = false)
+                speak("No te entendí. Podés decir: pozo, radar, trabajos, agua o animales.", isWarning = false)
                 _copilotStatusMessage.value = "Oído '$primaryText' (no reconocido)"
             }
         }
@@ -780,6 +792,23 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                     t == "saca" ||
                     t.contains("error") ||
                     t == "no"
+            }
+        }
+
+        fun isDisablePreTripReminderCommand(candidates: List<String>): Boolean {
+            return candidates.any { raw ->
+                val t = normalizeSpeech(raw)
+                t.contains("desactivar recordatorio") ||
+                    t.contains("desactiva recordatorio") ||
+                    t.contains("desactivar chequeo") ||
+                    t.contains("desactivar checklist") ||
+                    t.contains("silenciar chequeo") ||
+                    t.contains("silenciar checklist") ||
+                    t.contains("sacar chequeo") ||
+                    t.contains("sacar checklist") ||
+                    t.contains("sacar recordatorio") ||
+                    t.contains("no me avises mas") ||
+                    t.contains("no quiero recordatorio")
             }
         }
     }

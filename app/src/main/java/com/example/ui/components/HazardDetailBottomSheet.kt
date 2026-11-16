@@ -75,6 +75,8 @@ fun HazardDetailBottomSheet(
     currentLat: Double,
     currentLng: Double,
     isOwner: Boolean,
+    isGuestMode: Boolean = false,
+    onGuestActionBlocked: () -> Unit = {},
     onDismiss: () -> Unit,
     onConfirmHazard: () -> Unit,
     onResolveHazard: () -> Unit,
@@ -100,7 +102,7 @@ fun HazardDetailBottomSheet(
 
     val (title, color) = when (alert.type) {
         "pozo" -> Pair("Pozo Profundo / Bache Peligroso", AlertRed500)
-        "control_radar" -> Pair("Control Policial / Radar Vial", Color(0xFF6366F1))
+        "control_radar" -> Pair("Radar Vial / Velocidad", Color(0xFF6366F1))
         "trabajos_obra" -> Pair("Trabajos en Ruta / Obras", Color(0xFFF97316))
         "agua" -> Pair("Agua Acumulada en Calzada", RouteBlue500)
         "ruta_detonada" -> Pair("Ruta Detonada / Asfalto Roto", Amber500)
@@ -267,14 +269,13 @@ fun HazardDetailBottomSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
-                    onClick = onConfirmHazard,
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("confirm_hazard_btn"),
+                    onClick = { if (isGuestMode) onGuestActionBlocked() else onConfirmHazard() },
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("confirm_hazard_btn"),
                     contentPadding = PaddingValues(horizontal = 10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Color.Black)
                 ) {
@@ -294,11 +295,11 @@ fun HazardDetailBottomSheet(
                                 append("Sentido: ${alert.directionDesc}\n")
                             }
                             append("📍 Ver ubicación GPS: https://maps.google.com/?q=${alert.latitude},${alert.longitude}\n\n")
-                            append("📲 Descargá la app comunitaria VíaAlerta y sumá tus alertas en ruta: https://gofile.io/d/iciRSitS")
+                            append("📲 Descargá la app comunitaria VíaAlerta y sumá tus alertas en ruta: https://gen-lang-client-0699193083.web.app")
                         }
                         shareViaWhatsApp(context = context, text = shareMessage)
                     },
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("share_whatsapp_btn"),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("share_whatsapp_btn"),
                     contentPadding = PaddingValues(horizontal = 10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = SafetyGreen500, contentColor = Color.Black)
                 ) {
@@ -310,20 +311,20 @@ fun HazardDetailBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedButton(
-                onClick = onResolveHazard,
-                modifier = Modifier.fillMaxWidth().testTag("resolve_hazard_btn"),
+                onClick = { if (isGuestMode) onGuestActionBlocked() else onResolveHazard() },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("resolve_hazard_btn"),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = SafetyGreen500)
             ) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Marcar como Solucionado / Tapado")
+                Text(if (isGuestMode) "Iniciá sesión para votar o resolver" else "Marcar como Solucionado / Tapado")
             }
 
-            if (onDeleteHazard != null) {
+            if (onDeleteHazard != null && !isGuestMode) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = onDeleteHazard,
-                    modifier = Modifier.fillMaxWidth().testTag("delete_hazard_btn"),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("delete_hazard_btn"),
                     colors = ButtonDefaults.buttonColors(containerColor = AlertRed500, contentColor = Color.White)
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))

@@ -67,9 +67,11 @@ class UserRepository(private val db: FirebaseFirestore) {
         return try {
             val existing = getUserProfile(uid)
             val createdAt = existing?.createdAt ?: profile.createdAt ?: FieldValue.serverTimestamp()
+            val resolvedCode = profile.referralCode.ifBlank { existing?.referralCode.orEmpty() }
+                .ifBlank { buildReferralCode(uid) }
             val payload = mapOf(
                 "userId" to uid,
-                "name" to profile.name,
+                "name" to profile.name.ifBlank { auth.currentUser?.displayName ?: "Conductor VíaAlerta" },
                 "email" to (profile.email.ifBlank { auth.currentUser?.email ?: "" }),
                 "dni" to profile.dni,
                 "isDniVerified" to profile.isDniVerified,
@@ -79,13 +81,20 @@ class UserRepository(private val db: FirebaseFirestore) {
                 "trustRole" to profile.trustRole,
                 "isProUser" to profile.isProUser,
                 "proExpiresAtMillis" to profile.proExpiresAtMillis,
+                "isBetaTester" to (existing?.isBetaTester ?: profile.isBetaTester),
+                "xpTotal" to kotlin.math.max(profile.xpTotal, existing?.xpTotal ?: 0),
                 "pointsRuta" to profile.pointsRuta,
                 "dailyPointsEarned" to profile.dailyPointsEarned,
                 "lastPointsDateString" to profile.lastPointsDateString,
+                "referralCode" to resolvedCode,
+                "referredByUid" to profile.referredByUid.ifBlank { existing?.referredByUid.orEmpty() },
+                "referredByCode" to profile.referredByCode.ifBlank { existing?.referredByCode.orEmpty() },
+                "referralCount" to kotlin.math.max(profile.referralCount, existing?.referralCount ?: 0),
                 "createdAt" to createdAt,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             docRef.set(payload).await()
+            ensureReferralCodeDocument(uid, profile.name, resolvedCode)
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -99,21 +108,208 @@ class UserRepository(private val db: FirebaseFirestore) {
         val docRef = db.collection("users").document(userId)
         return try {
             val current = getUserProfile(userId)
-            // If user has not yet been granted pro trial (proExpiresAtMillis == 0L)
-            if (current == null || current.proExpiresAtMillis == 0L) {
+            val generatedCode = current?.referralCode?.ifBlank { null } ?: buildReferralCode(userId)
+            val displayName = current?.name?.ifBlank { null }
+                ?: auth.currentUser?.displayName?.ifBlank { null }
+                ?: "Conductor VíaAlerta"
+
+            if (current == null) {
                 val sevenDaysMillis = 7L * 24L * 60L * 60L * 1000L
                 val trialExpiry = System.currentTimeMillis() + sevenDaysMillis
-                docRef.update(
+                val initialPayload = mapOf(
+                    "userId" to userId,
+                    "name" to displayName,
+                    "email" to (auth.currentUser?.email ?: ""),
+                    "trustRole" to "general",
+                    "isProUser" to true,
+                    "proExpiresAtMillis" to trialExpiry,
+                    "isBetaTester" to false,
+                    "xpTotal" to 0,
+                    "pointsRuta" to 0,
+                    "dailyPointsEarned" to 0,
+                    "referralCode" to generatedCode,
+                    "referralCount" to 0,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                docRef.set(initialPayload).await()
+                ensureReferralCodeDocument(userId, displayName, generatedCode)
+                Result.success(true)
+            } else {
+                ensureReferralCodeDocument(userId, displayName, generatedCode)
+                if (current.proExpiresAtMillis == 0L) {
+                    val sevenDaysMillis = 7L * 24L * 60L * 60L * 1000L
+                    val trialExpiry = System.currentTimeMillis() + sevenDaysMillis
+                    docRef.update(
+                        mapOf(
+                            "isProUser" to true,
+                            "proExpiresAtMillis" to trialExpiry,
+                            "referralCode" to generatedCode,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                    Result.success(true)
+                } else {
+                    if (current.referralCode.isBlank()) {
+                        docRef.update(
+                            mapOf(
+                                "referralCode" to generatedCode,
+                                "updatedAt" to FieldValue.serverTimestamp()
+                            )
+                        ).await()
+                    }
+                    Result.success(false)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun ensureReferralCodeDocument(uid: String, displayName: String, code: String) {
+        try {
+            val codeRef = db.collection("referral_codes").document(code)
+            val snap = codeRef.get().await()
+            if (!snap.exists()) {
+                codeRef.set(
                     mapOf(
+                        "code" to code,
+                        "ownerUid" to uid,
+                        "ownerName" to displayName.trim().split(" ").firstOrNull().orEmpty().ifBlank { "Conductor" },
+                        "createdAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * Redeems a friend's referral code (VIA-XXXXX) once per invited account.
+     * Creates `/referrals/{uid}` and credits +150 XP/Puntos Ruta and +7 PRO days immediately to the referee.
+     */
+    suspend fun redeemReferralCode(rawCode: String): Result<String> {
+        val uid = requireUserId()
+        val code = normalizeReferralCode(rawCode)
+        if (!isValidReferralCodeFormat(code)) {
+            return Result.failure(IllegalArgumentException("Formato inválido. Usá el código tipo VIA-XXXXX."))
+        }
+
+        return try {
+            val myProfile = getUserProfile(uid)
+            if (!myProfile?.referredByCode.isNullOrBlank()) {
+                return Result.failure(IllegalStateException("Ya canjeaste el código ${myProfile?.referredByCode} anteriormente."))
+            }
+
+            val existingRef = db.collection("referrals").document(uid).get().await()
+            if (existingRef.exists()) {
+                return Result.failure(IllegalStateException("Tu cuenta ya tiene una invitación aplicada."))
+            }
+
+            val codeSnap = db.collection("referral_codes").document(code).get().await()
+            if (!codeSnap.exists()) {
+                return Result.failure(IllegalArgumentException("No encontramos el código $code. Revisalo con quien te invitó."))
+            }
+
+            val ownerUid = codeSnap.getString("ownerUid") ?: ""
+            val ownerName = codeSnap.getString("ownerName") ?: "un conductor"
+            if (ownerUid.isBlank() || ownerUid == uid) {
+                return Result.failure(IllegalArgumentException("No podés usar tu propio código de invitación."))
+            }
+
+            val myName = myProfile?.name?.ifBlank { null }
+                ?: auth.currentUser?.displayName?.ifBlank { null }
+                ?: "Conductor VíaAlerta"
+
+            val refPayload = mapOf(
+                "refereeUid" to uid,
+                "refereeName" to myName,
+                "referrerUid" to ownerUid,
+                "code" to code,
+                "status" to "pending",
+                "rewardGrantedToReferee" to true,
+                "rewardGrantedToReferrer" to false,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("referrals").document(uid).set(refPayload).await()
+
+            val now = System.currentTimeMillis()
+            val baseExpiry = if ((myProfile?.proExpiresAtMillis ?: 0L) > now) myProfile!!.proExpiresAtMillis else now
+            val bonusMs = REFERRAL_BONUS_DAYS.toLong() * 24L * 60L * 60L * 1000L
+            val newExpiry = baseExpiry + bonusMs
+
+            val userUpdates = mapOf(
+                "pointsRuta" to ((myProfile?.pointsRuta ?: 0) + REFERRAL_BONUS_POINTS),
+                "xpTotal" to ((myProfile?.xpTotal ?: 0) + REFERRAL_BONUS_POINTS),
+                "isProUser" to true,
+                "proExpiresAtMillis" to newExpiry,
+                "referredByUid" to ownerUid,
+                "referredByCode" to code,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("users").document(uid).update(userUpdates).await()
+
+            Result.success("¡Código de $ownerName aplicado! Sumaste +$REFERRAL_BONUS_POINTS pts/XP y +$REFERRAL_BONUS_DAYS días PRO.")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "referrals/$uid")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Checks `/referrals` where current user is the referrer and settles any pending invitations,
+     * granting +150 XP/Puntos Ruta and +7 PRO days per invited driver.
+     */
+    suspend fun claimPendingReferralRewards(userId: String): Result<Int> {
+        return try {
+            val uid = requireUserId()
+            if (uid != userId) return Result.success(0)
+
+            val pendingSnaps = db.collection("referrals")
+                .whereEqualTo("referrerUid", uid)
+                .whereEqualTo("rewardGrantedToReferrer", false)
+                .get()
+                .await()
+
+            if (pendingSnaps.isEmpty) return Result.success(0)
+
+            val profile = getUserProfile(uid) ?: return Result.success(0)
+            var claimedCount = 0
+            for (doc in pendingSnaps.documents) {
+                try {
+                    doc.reference.update(
+                        mapOf(
+                            "rewardGrantedToReferrer" to true,
+                            "status" to "claimed",
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                    claimedCount++
+                } catch (_: Throwable) {}
+            }
+
+            if (claimedCount > 0) {
+                val now = System.currentTimeMillis()
+                val baseExpiry = if (profile.proExpiresAtMillis > now) profile.proExpiresAtMillis else now
+                val bonusMs = (REFERRAL_BONUS_DAYS * claimedCount).toLong() * 24L * 60L * 60L * 1000L
+                val bonusPts = REFERRAL_BONUS_POINTS * claimedCount
+
+                db.collection("users").document(uid).update(
+                    mapOf(
+                        "pointsRuta" to (profile.pointsRuta + bonusPts),
+                        "xpTotal" to (profile.xpTotal + bonusPts),
+                        "referralCount" to (profile.referralCount + claimedCount),
                         "isProUser" to true,
-                        "proExpiresAtMillis" to trialExpiry,
+                        "proExpiresAtMillis" to (baseExpiry + bonusMs),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
-                Result.success(true)
-            } else {
-                Result.success(false)
             }
+            Result.success(claimedCount)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -134,10 +330,12 @@ class UserRepository(private val db: FirebaseFirestore) {
 
             if (actualPointsAdded > 0) {
                 val newTotalPoints = profile.pointsRuta + actualPointsAdded
+                val newXpTotal = kotlin.math.max(profile.xpTotal, profile.pointsRuta) + actualPointsAdded
                 val newDailyPoints = currentDaily + actualPointsAdded
                 docRef.update(
                     mapOf(
                         "pointsRuta" to newTotalPoints,
+                        "xpTotal" to newXpTotal,
                         "dailyPointsEarned" to newDailyPoints,
                         "lastPointsDateString" to todayString,
                         "updatedAt" to FieldValue.serverTimestamp()
@@ -181,10 +379,97 @@ class UserRepository(private val db: FirebaseFirestore) {
         }
     }
 
+    /** Admin-only real-time observation of registered users for Beta Tester and PRO management. */
+    fun observeAllUsersForAdmin(): Flow<List<UserProfile>> = flow {
+        emitAll(
+            db.collection("users")
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(UserProfile::class.java)
+                        .sortedByDescending { it.xpTotal }
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    emit(emptyList())
+                }
+        )
+    }
+
+    /** Admin-only toggle to grant or revoke Beta Tester access for a specific driver. */
+    suspend fun setUserBetaTester(targetUserId: String, isBeta: Boolean): Result<Unit> {
+        val docRef = db.collection("users").document(targetUserId)
+        return try {
+            docRef.update(
+                mapOf(
+                    "isBetaTester" to isBeta,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (auth.currentUser != null) {
+                handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            }
+            Result.failure(e)
+        }
+    }
+
+    /** Admin-only helper to grant PRO days or switch a user back to Freemium. */
+    suspend fun setUserProByAdmin(targetUserId: String, daysToGrant: Int?): Result<Unit> {
+        val docRef = db.collection("users").document(targetUserId)
+        return try {
+            val now = System.currentTimeMillis()
+            val payload = if (daysToGrant != null && daysToGrant > 0) {
+                mapOf(
+                    "isProUser" to true,
+                    "proExpiresAtMillis" to (now + daysToGrant.toLong() * 24L * 60L * 60L * 1000L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            } else {
+                mapOf(
+                    "isProUser" to false,
+                    "proExpiresAtMillis" to (now - 1000L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            }
+            docRef.update(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (auth.currentUser != null) {
+                handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            }
+            Result.failure(e)
+        }
+    }
+
     companion object {
         const val OWNER_MODE_AUTO = "AUTO"
         const val OWNER_MODE_FORCE_PRO = "FORCE_PRO"
         const val OWNER_MODE_FORCE_FREEMIUM = "FORCE_FREEMIUM"
+
+        const val REFERRAL_BONUS_POINTS = 150
+        const val REFERRAL_BONUS_DAYS = 7
+
+        fun buildReferralCode(uid: String): String {
+            val clean = uid.replace(Regex("[^a-zA-Z0-9]"), "").uppercase()
+            val suffix = if (clean.length >= 6) clean.take(6) else clean.padEnd(6, 'V')
+            return "VIA-$suffix"
+        }
+
+        fun normalizeReferralCode(raw: String): String {
+            return raw.trim().uppercase().replace(" ", "")
+        }
+
+        fun isValidReferralCodeFormat(code: String): Boolean {
+            return code.matches(Regex("^VIA-[A-Z0-9]{4,12}$"))
+        }
 
         fun getOwnerOverrideMode(context: Context): String {
             val prefs = context.getSharedPreferences("viaalerta_owner_prefs", Context.MODE_PRIVATE)

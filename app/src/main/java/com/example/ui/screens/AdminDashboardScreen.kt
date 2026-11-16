@@ -70,8 +70,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.HorizontalDivider
+import com.example.data.model.AppFeatureFlags
+import com.example.data.model.FeatureMode
 import com.example.data.model.OnlineDriver
 import com.example.data.model.RoadAlert
+import com.example.data.repository.BillingConfigRepository
+import com.example.data.repository.FeatureFlagsRepository
 import com.example.data.repository.HitchhikeRepository
 import com.example.data.repository.PresenceRepository
 import com.example.data.repository.RoadAlertRepository
@@ -97,6 +101,7 @@ fun AdminDashboardScreen(
     hitchhikeRepository: HitchhikeRepository,
     userRepository: UserRepository,
     presenceRepository: PresenceRepository? = null,
+    featureFlagsRepository: FeatureFlagsRepository? = null,
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -108,14 +113,27 @@ fun AdminDashboardScreen(
     val hitchhikes by hitchhikeRepository.observeWaitingHitchhikes().collectAsState(initial = emptyList())
     val activePresenceRepo = remember(context) { presenceRepository ?: PresenceRepository(context) }
     val onlineDrivers by activePresenceRepo.observeOnlineDrivers().collectAsState(initial = emptyList())
+    val activeFlagsRepo = remember(context) { featureFlagsRepository ?: FeatureFlagsRepository(context) }
+    val featureFlags by activeFlagsRepo.observeFeatureFlags()
+        .collectAsState(initial = FeatureFlagsRepository.getCachedFeatureFlags(context))
+    val registeredUsers by userRepository.observeAllUsersForAdmin().collectAsState(initial = emptyList())
 
     var ownerOverrideMode by remember { mutableStateOf(UserRepository.getOwnerOverrideMode(context)) }
+    var userSearchQuery by remember { mutableStateOf("") }
+
+    val billingRepo = remember(context) { BillingConfigRepository(context) }
 
     var showCleanTestDialog by remember { mutableStateOf(false) }
     var showFullResetDialog by remember { mutableStateOf(false) }
     var mercadoPagoAlias by remember { mutableStateOf("vialerta.oficial.mp") }
-    var proPriceArs by remember { mutableStateOf("1500") }
+    var proPriceArs by remember { mutableStateOf("5000") }
     var isProcessingAction by remember { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val cfg = billingRepo.getBillingConfig()
+        if (cfg.mercadoPagoAlias.isNotBlank()) mercadoPagoAlias = cfg.mercadoPagoAlias
+        if (cfg.proPriceArs > 0) proPriceArs = cfg.proPriceArs.toString()
+    }
 
     // Metrics breakdown
     val potholeCount = activeAlerts.count { it.type == "pozo" }
@@ -379,6 +397,288 @@ fun AdminDashboardScreen(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            // Section 0 (Front & Center): Staged Module Rollout (Oculto / Beta / Público)
+            Text(
+                text = "🚀 LANZAMIENTO POR ETAPAS Y MÓDULOS BETA",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = RouteBlue500
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Slate900),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, RouteBlue500.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth().testTag("admin_feature_flags_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Ocultá módulos vacíos al público mientras crecemos o habilitalos en «Beta» solo para vos y tus testers en tiempo real.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    fun updateFlag(label: String, transform: (AppFeatureFlags) -> AppFeatureFlags) {
+                        coroutineScope.launch {
+                            val updated = transform(featureFlags)
+                            val res = activeFlagsRepo.saveFeatureFlags(updated)
+                            if (res.isSuccess) {
+                                snackbarHostState.showSnackbar("🚀 $label actualizado al instante.")
+                            } else {
+                                snackbarHostState.showSnackbar("⚠️ Error al guardar estado de $label.")
+                            }
+                        }
+                    }
+
+                    FeatureFlagToggleRow(
+                        title = "🚗 Aventón Seguro",
+                        subtitle = "Pestaña y marcadores de pasajeros en ruta",
+                        currentMode = featureFlags.aventonMode,
+                        testTagPrefix = "flag_aventon",
+                        onSelectMode = { mode -> updateFlag("Aventón") { it.copy(aventonMode = mode) } }
+                    )
+                    HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
+
+                    FeatureFlagToggleRow(
+                        title = "🧳 Baúl Vial",
+                        subtitle = "Objetos encontrados/perdidos y reclamos",
+                        currentMode = featureFlags.baulVialMode,
+                        testTagPrefix = "flag_baul",
+                        onSelectMode = { mode -> updateFlag("Baúl Vial") { it.copy(baulVialMode = mode) } }
+                    )
+                    HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
+
+                    FeatureFlagToggleRow(
+                        title = "📄 Reclamos Oficiales",
+                        subtitle = "Pestaña de notas por deterioro ante vialidad",
+                        currentMode = featureFlags.reclamosMode,
+                        testTagPrefix = "flag_reclamos",
+                        onSelectMode = { mode -> updateFlag("Reclamos") { it.copy(reclamosMode = mode) } }
+                    )
+                    HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
+
+                    FeatureFlagToggleRow(
+                        title = "⭐ Conversión PRO / Mercado Pago",
+                        subtitle = "Cartel post-viaje e hitos para pasar a PRO",
+                        currentMode = featureFlags.proConversionMode,
+                        testTagPrefix = "flag_pro_conv",
+                        onSelectMode = { mode -> updateFlag("Conversión PRO") { it.copy(proConversionMode = mode) } }
+                    )
+                    HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
+
+                    FeatureFlagToggleRow(
+                        title = "🎁 Referidos (VIA-XXXXXX)",
+                        subtitle = "Invitaciones con +150 XP y +7 días PRO",
+                        currentMode = featureFlags.referralsMode,
+                        testTagPrefix = "flag_referrals",
+                        onSelectMode = { mode -> updateFlag("Referidos") { it.copy(referralsMode = mode) } }
+                    )
+                    HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
+
+                    FeatureFlagToggleRow(
+                        title = "✅ Chequeo Pre-Viaje por Voz",
+                        subtitle = "Recordatorio de seguridad al iniciar ruta",
+                        currentMode = featureFlags.preTripChecklistMode,
+                        testTagPrefix = "flag_pretrip",
+                        onSelectMode = { mode -> updateFlag("Chequeo Pre-Viaje") { it.copy(preTripChecklistMode = mode) } }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(22.dp))
+
+            // Section 0B: Beta Testers & Users Management
+            val betaCount = registeredUsers.count { it.isBetaTester }
+            Text(
+                text = "🧪 BETA TESTERS Y USUARIOS (${registeredUsers.size} • $betaCount Beta)",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = Amber400
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Slate900),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, Slate800),
+                modifier = Modifier.fillMaxWidth().testTag("admin_beta_users_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = userSearchQuery,
+                        onValueChange = { userSearchQuery = it },
+                        label = { Text("Buscar usuario por nombre, email o patente") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_user_search_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RouteBlue500,
+                            unfocusedBorderColor = Slate700,
+                            focusedLabelColor = RouteBlue500
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val filteredUsers = remember(registeredUsers, userSearchQuery) {
+                        val q = userSearchQuery.trim().lowercase()
+                        if (q.isBlank()) registeredUsers.take(25)
+                        else registeredUsers.filter { u ->
+                            u.name.lowercase().contains(q) ||
+                                u.email.lowercase().contains(q) ||
+                                u.defaultPlate.lowercase().contains(q)
+                        }.take(25)
+                    }
+
+                    if (filteredUsers.isEmpty()) {
+                        Text(
+                            text = "No se encontraron usuarios registrados con ese filtro.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    } else {
+                        val now = System.currentTimeMillis()
+                        filteredUsers.forEachIndexed { idx, user ->
+                            val isPro = user.isProUser && (user.proExpiresAtMillis == 0L || user.proExpiresAtMillis > now)
+                            val userTargetId = user.userId.ifBlank { user.id }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = user.name.ifBlank { "Conductor sin nombre" },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = user.email.ifBlank { userTargetId },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White.copy(alpha = 0.65f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        if (user.isBetaTester) {
+                                            Surface(
+                                                color = RouteBlue500.copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, RouteBlue500)
+                                            ) {
+                                                Text(
+                                                    "🧪 BETA",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = RouteBlue500,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        Surface(
+                                            color = if (isPro) Amber500.copy(alpha = 0.2f) else Slate800,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                if (isPro) "PRO" else "Free",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isPro) Amber400 else Color.White.copy(alpha = 0.7f),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val nextBeta = !user.isBetaTester
+                                                val res = userRepository.setUserBetaTester(userTargetId, nextBeta)
+                                                if (res.isSuccess) {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (nextBeta) "🧪 Beta habilitado para ${user.name.ifBlank { user.email }}"
+                                                        else "Acceso Beta quitado a ${user.name.ifBlank { user.email }}"
+                                                    )
+                                                } else {
+                                                    snackbarHostState.showSnackbar("⚠️ No se pudo actualizar Beta.")
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (user.isBetaTester) RouteBlue500 else Slate800,
+                                            contentColor = if (user.isBetaTester) Color.Black else Color.White
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp),
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("toggle_beta_$userTargetId")
+                                    ) {
+                                        Text(
+                                            text = if (user.isBetaTester) "Quitar Beta" else "🧪 Activar Beta",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val grantDays = if (isPro) null else 30
+                                                val res = userRepository.setUserProByAdmin(userTargetId, grantDays)
+                                                if (res.isSuccess) {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (grantDays != null) "🌟 +30d PRO activado para ${user.name}"
+                                                        else "📱 Usuario pasado a Freemium"
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        border = BorderStroke(1.dp, if (isPro) Slate700 else Amber400),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = if (isPro) Color.White.copy(alpha = 0.8f) else Amber400
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp),
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isPro) "Pasar a Free" else "+30d PRO",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                            if (idx < filteredUsers.size - 1) {
+                                HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 4.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(22.dp))
 
             // Section 1: KPI Metrics Grid
             Text(
@@ -839,7 +1139,7 @@ fun AdminDashboardScreen(
                     OutlinedTextField(
                         value = proPriceArs,
                         onValueChange = { proPriceArs = it },
-                        label = { Text("Monto mensual en pesos (ej. $1500)") },
+                        label = { Text("Monto mensual en pesos (base $5000)") },
                         modifier = Modifier.fillMaxWidth().testTag("pro_price_input"),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Amber500,
@@ -854,12 +1154,21 @@ fun AdminDashboardScreen(
                     Button(
                         onClick = {
                             coroutineScope.launch {
-                                snackbarHostState.showSnackbar("💾 Parámetros de cobro guardados con éxito.")
+                                val parsedPrice = proPriceArs.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 5000
+                                val res = billingRepo.saveBillingConfig(
+                                    mercadoPagoAlias = mercadoPagoAlias,
+                                    proPriceArs = parsedPrice
+                                )
+                                if (res.isSuccess) {
+                                    snackbarHostState.showSnackbar("💾 Parámetros de cobro ($parsedPrice ARS) guardados en Firestore.")
+                                } else {
+                                    snackbarHostState.showSnackbar("Error al guardar configuración de cobro.")
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = SafetyGreen500, contentColor = Color.Black),
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("save_billing_config_btn")
                     ) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
@@ -985,6 +1294,63 @@ fun AdminMetricCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White.copy(alpha = 0.5f)
             )
+        }
+    }
+}
+
+@Composable
+private fun FeatureFlagToggleRow(
+    title: String,
+    subtitle: String,
+    currentMode: String,
+    testTagPrefix: String,
+    onSelectMode: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.65f)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(
+                Triple(FeatureMode.HIDDEN, "Oculto", Slate700),
+                Triple(FeatureMode.BETA, "🧪 Beta", RouteBlue500),
+                Triple(FeatureMode.PUBLIC, "Público", SafetyGreen500)
+            ).forEach { (modeKey, modeLabel, activeColor) ->
+                val isSelected = currentMode.equals(modeKey, ignoreCase = true)
+                Surface(
+                    color = if (isSelected) activeColor else Slate800,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, if (isSelected) Color.White else Slate700),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .clickable { onSelectMode(modeKey) }
+                        .testTag("${testTagPrefix}_$modeKey")
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
+                        Text(
+                            text = modeLabel,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelected && modeKey != FeatureMode.HIDDEN) Color.Black else Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
         }
     }
 }

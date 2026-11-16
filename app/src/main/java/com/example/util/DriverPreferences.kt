@@ -25,7 +25,27 @@ object DriverPreferences {
     private const val KEY_LAST_REPORT_TYPE = "last_report_type"
     private const val KEY_LAST_REPORT_TS = "last_report_ts"
 
+    // 1.5 Pre-trip safety checklist (Auto vs Moto vs Camion)
+    private const val KEY_VEHICLE_TYPE = "driver_vehicle_type" // AUTO | MOTO | CAMION
+    private const val KEY_PRETRIP_ENABLED = "pretrip_checklist_enabled"
+    private const val KEY_PRETRIP_LAST_SPOKEN_TS = "pretrip_checklist_last_ts"
+
+    // 1.4 Smart PRO conversion & cooldown
+    private const val KEY_AVOIDED_HAZARDS_TOTAL = "avoided_hazards_total"
+    private const val KEY_LAST_MILESTONE_SHOWN = "last_pro_milestone_shown"
+    private const val KEY_PRO_PROMPT_DISMISSED_TS = "pro_prompt_dismissed_ts"
+    private const val KEY_PRO_PROMPT_DISMISS_COUNT = "pro_prompt_dismiss_count"
+    private const val KEY_TRIAL_24H_SHOWN_EXPIRY = "trial_24h_shown_expiry"
+
+    const val VEHICLE_AUTO = "AUTO"
+    const val VEHICLE_MOTO = "MOTO"
+    const val VEHICLE_CAMION = "CAMION"
+
     const val FOUR_HOURS_MS = 4L * 60L * 60L * 1000L
+    const val TWELVE_HOURS_MS = 12L * 60L * 60L * 1000L
+    const val SEVEN_DAYS_MS = 7L * 24L * 60L * 60L * 1000L
+    const val TWENTY_DAYS_MS = 20L * 24L * 60L * 60L * 1000L
+    const val ONE_DAY_MS = 24L * 60L * 60L * 1000L
 
     fun getSpeedCalibrationPercent(context: Context): Int {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -106,6 +126,128 @@ object DriverPreferences {
                 hour >= 20 || hour < 6
             }
         }
+    }
+
+    // --- Vehicle Type & Pre-Trip Safety Checklist (1.5) ---
+    fun getVehicleType(context: Context): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_VEHICLE_TYPE, VEHICLE_AUTO) ?: VEHICLE_AUTO
+    }
+
+    fun setVehicleType(context: Context, type: String) {
+        val clean = when (type.uppercase()) {
+            VEHICLE_MOTO -> VEHICLE_MOTO
+            VEHICLE_CAMION -> VEHICLE_CAMION
+            else -> VEHICLE_AUTO
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_VEHICLE_TYPE, clean).apply()
+    }
+
+    fun isPreTripChecklistEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_PRETRIP_ENABLED, true)
+    }
+
+    fun setPreTripChecklistEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_PRETRIP_ENABLED, enabled).apply()
+    }
+
+    fun canSpeakPreTripChecklist(
+        enabled: Boolean,
+        lastSpokenMillis: Long,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!enabled) return false
+        return (nowMillis - lastSpokenMillis) >= TWELVE_HOURS_MS
+    }
+
+    fun shouldSpeakPreTripChecklist(context: Context, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val enabled = prefs.getBoolean(KEY_PRETRIP_ENABLED, true)
+        val lastTs = prefs.getLong(KEY_PRETRIP_LAST_SPOKEN_TS, 0L)
+        return canSpeakPreTripChecklist(enabled, lastTs, nowMillis)
+    }
+
+    fun markPreTripChecklistSpoken(context: Context, nowMillis: Long = System.currentTimeMillis()) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putLong(KEY_PRETRIP_LAST_SPOKEN_TS, nowMillis).apply()
+    }
+
+    fun buildPreTripChecklistSpeech(vehicleType: String): String {
+        return when (vehicleType.uppercase()) {
+            VEHICLE_MOTO -> "Chequeo rápido en moto: casco bien abrochado, luces encendidas y documentación al día. Buen viaje."
+            VEHICLE_CAMION -> "Chequeo rápido en camión: cinturón abrochado, luces reglamentarias encendidas y documentación al día. Buen viaje."
+            else -> "Chequeo rápido de seguridad: cinturón puesto, luces bajas encendidas y documentación al día. Buen viaje."
+        }
+    }
+
+    // --- Avoided Hazards & Smart PRO Conversion Cooldowns (1.4) ---
+    fun getAvoidedHazardsTotal(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_AVOIDED_HAZARDS_TOTAL, 0)
+    }
+
+    fun incrementAvoidedHazardsTotal(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val next = prefs.getInt(KEY_AVOIDED_HAZARDS_TOTAL, 0) + 1
+        prefs.edit().putInt(KEY_AVOIDED_HAZARDS_TOTAL, next).apply()
+        return next
+    }
+
+    fun recordProPromptDismissal(context: Context, nowMillis: Long = System.currentTimeMillis()) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val count = prefs.getInt(KEY_PRO_PROMPT_DISMISS_COUNT, 0) + 1
+        prefs.edit()
+            .putLong(KEY_PRO_PROMPT_DISMISSED_TS, nowMillis)
+            .putInt(KEY_PRO_PROMPT_DISMISS_COUNT, count)
+            .apply()
+    }
+
+    fun markTrial24hNotified(context: Context, expiryMillis: Long) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putLong(KEY_TRIAL_24H_SHOWN_EXPIRY, expiryMillis).apply()
+    }
+
+    fun markMilestonePromptShown(context: Context, milestoneValue: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putInt(KEY_LAST_MILESTONE_SHOWN, milestoneValue).apply()
+    }
+
+    fun isProCooldownActive(
+        lastDismissedMillis: Long,
+        dismissCount: Int,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (lastDismissedMillis <= 0L) return false
+        val requiredCooldown = if (dismissCount >= 3) TWENTY_DAYS_MS else SEVEN_DAYS_MS
+        return (nowMillis - lastDismissedMillis) < requiredCooldown
+    }
+
+    fun nextMilestoneReached(totalAvoided: Int, lastShownMilestone: Int): Int? {
+        val milestones = listOf(15, 25, 45, 70, 100, 150)
+        return milestones.lastOrNull { totalAvoided >= it && it > lastShownMilestone }
+    }
+
+    fun getLastMilestoneShown(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_LAST_MILESTONE_SHOWN, 0)
+    }
+
+    fun getLastProDismissedMillis(context: Context): Long {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_PRO_PROMPT_DISMISSED_TS, 0L)
+    }
+
+    fun getProDismissCount(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_PRO_PROMPT_DISMISS_COUNT, 0)
+    }
+
+    fun getTrial24hNotifiedExpiry(context: Context): Long {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_TRIAL_24H_SHOWN_EXPIRY, 0L)
     }
 
     /**

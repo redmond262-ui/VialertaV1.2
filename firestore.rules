@@ -42,9 +42,37 @@ service cloud.firestore {
              (!('trustRole' in data) || data.trustRole in ['docente', 'estudiante', 'salud', 'policia', 'trabajador', 'general', 'admin']) &&
              (!('isProUser' in data) || data.isProUser is bool) &&
              (!('proExpiresAtMillis' in data) || data.proExpiresAtMillis is int || data.proExpiresAtMillis is number) &&
-             (!('pointsRuta' in data) || data.pointsRuta is int) &&
-             (!('dailyPointsEarned' in data) || data.dailyPointsEarned is int) &&
-             (!('lastPointsDateString' in data) || data.lastPointsDateString == null || data.lastPointsDateString is string);
+              (!('pointsRuta' in data) || (data.pointsRuta is int && data.pointsRuta >= 0)) &&
+              (!('xpTotal' in data) || (data.xpTotal is int && data.xpTotal >= 0)) &&
+              (!('dailyPointsEarned' in data) || (data.dailyPointsEarned is int && data.dailyPointsEarned >= 0)) &&
+              (!('lastPointsDateString' in data) || data.lastPointsDateString == null || (data.lastPointsDateString is string && data.lastPointsDateString.size() <= 20)) &&
+              (!('referralCode' in data) || data.referralCode == null || (data.referralCode is string && data.referralCode.size() <= 24)) &&
+              (!('referredByUid' in data) || data.referredByUid == null || (data.referredByUid is string && data.referredByUid.size() <= 128)) &&
+              (!('referredByCode' in data) || data.referredByCode == null || (data.referredByCode is string && data.referredByCode.size() <= 24)) &&
+              (!('referralCount' in data) || (data.referralCount is int && data.referralCount >= 0));
+    }
+
+    function isValidReferralCode(data) {
+      return data.code is string && data.code.size() >= 6 && data.code.size() <= 20 &&
+             data.ownerUid is string && data.ownerUid.size() > 0 && data.ownerUid.size() <= 128 &&
+             (!('ownerName' in data) || data.ownerName == null || (data.ownerName is string && data.ownerName.size() <= 100));
+    }
+
+    function isValidReferralRecord(data) {
+      return data.refereeUid is string && data.refereeUid.size() > 0 && data.refereeUid.size() <= 128 &&
+             data.referrerUid is string && data.referrerUid.size() > 0 && data.referrerUid.size() <= 128 &&
+             data.referrerUid != data.refereeUid &&
+             data.code is string && data.code.size() >= 6 && data.code.size() <= 20 &&
+             data.status in ['pending', 'claimed'] &&
+             (!('refereeName' in data) || data.refereeName == null || (data.refereeName is string && data.refereeName.size() <= 100)) &&
+             (!('rewardGrantedToReferee' in data) || data.rewardGrantedToReferee is bool) &&
+             (!('rewardGrantedToReferrer' in data) || data.rewardGrantedToReferrer is bool);
+    }
+
+    function isValidBillingConfig(data) {
+      return data.mercadoPagoAlias is string && data.mercadoPagoAlias.size() >= 3 && data.mercadoPagoAlias.size() <= 120 &&
+             data.proPriceArs is int && data.proPriceArs >= 0 && data.proPriceArs <= 1000000 &&
+             (!('paymentLinkUrl' in data) || data.paymentLinkUrl == null || (data.paymentLinkUrl is string && data.paymentLinkUrl.size() <= 300));
     }
 
     function isValidRoadAlert(data) {
@@ -139,21 +167,105 @@ service cloud.firestore {
                        incoming().keys().hasAll(['userId', 'name', 'createdAt']) &&
                        incoming().createdAt is timestamp &&
                        incoming().createdAt <= request.time &&
+                       (!('isBetaTester' in incoming()) || incoming().isBetaTester == false || isAdmin()) &&
                        isValidUser(incoming());
       allow update: if isSignedIn() &&
                        (request.auth.uid == userId || isAdmin()) &&
                        isValidId(userId) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt &&
+                       (!('isBetaTester' in incoming()) || incoming().isBetaTester == existing().get('isBetaTester', false) || isAdmin()) &&
                        (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time)) &&
                        isValidUser(incoming());
       allow delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
 
+    // --- Public Referral Code Directory (Single-doc get only; prevents user scraping) ---
+    match /referral_codes/{code} {
+      allow get: if isSignedIn() && isValidId(code);
+      allow list: if isAdmin();
+      allow create: if isSignedIn() &&
+                       isValidId(code) &&
+                       incoming().code == code &&
+                       incoming().ownerUid == request.auth.uid &&
+                       incoming().keys().hasAll(['code', 'ownerUid', 'createdAt']) &&
+                       incoming().keys().hasOnly(['code', 'ownerUid', 'ownerName', 'createdAt']) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidReferralCode(incoming());
+      allow update, delete: if isAdmin();
+    }
+
+    // --- Referral Attributions (1 per invited driver ID) ---
+    match /referrals/{refereeUid} {
+      allow get: if isSignedIn() && isValidId(refereeUid) && (refereeUid == request.auth.uid || existing().referrerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.referrerUid == request.auth.uid || resource.data.refereeUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() &&
+                       isValidId(refereeUid) &&
+                       refereeUid == request.auth.uid &&
+                       incoming().refereeUid == request.auth.uid &&
+                       incoming().referrerUid != request.auth.uid &&
+                       incoming().status == 'pending' &&
+                       incoming().keys().hasAll(['refereeUid', 'referrerUid', 'code', 'status', 'createdAt']) &&
+                       incoming().keys().hasOnly(['refereeUid', 'refereeName', 'referrerUid', 'code', 'status', 'rewardGrantedToReferee', 'rewardGrantedToReferrer', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidReferralRecord(incoming()) &&
+                       exists(/databases/$(database)/documents/referral_codes/$(incoming().code)) &&
+                       get(/databases/$(database)/documents/referral_codes/$(incoming().code)).data.ownerUid == incoming().referrerUid;
+      allow update: if isSignedIn() &&
+                       isValidId(refereeUid) &&
+                       incoming().refereeUid == existing().refereeUid &&
+                       incoming().referrerUid == existing().referrerUid &&
+                       incoming().code == existing().code &&
+                       incoming().createdAt == existing().createdAt &&
+                       (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time)) &&
+                       isValidReferralRecord(incoming()) &&
+                       (
+                         isAdmin() ||
+                         (
+                           existing().referrerUid == request.auth.uid &&
+                           existing().rewardGrantedToReferrer == false &&
+                           incoming().rewardGrantedToReferrer == true &&
+                           incoming().status == 'claimed' &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['rewardGrantedToReferrer', 'status', 'updatedAt'])
+                         )
+                       );
+      allow delete: if isAdmin();
+    }
+
+    // --- App Global Configs (billing & feature rollout flags) ---
+    match /app_config/{configId} {
+      // 'features' holds zero PII (hidden|beta|public module modes) so Guest Mode can also hide gated tabs
+      allow get: if configId == 'features' || (isSignedIn() && configId == 'billing');
+      allow list: if isAdmin();
+      allow create: if isAdmin() &&
+                       (
+                         (configId == 'billing' &&
+                          incoming().keys().hasAll(['mercadoPagoAlias', 'proPriceArs']) &&
+                          isValidBillingConfig(incoming())) ||
+                         (configId == 'features' &&
+                          incoming().keys().hasAll(['aventonMode', 'baulVialMode']) &&
+                          incoming().keys().hasOnly(['aventonMode', 'baulVialMode', 'reclamosMode', 'proConversionMode', 'referralsMode', 'preTripChecklistMode', 'updatedAt']) &&
+                          isValidFeatureFlags(incoming()))
+                       ) &&
+                       (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time));
+      allow update: if isAdmin() &&
+                       (
+                         (configId == 'billing' && isValidBillingConfig(incoming())) ||
+                         (configId == 'features' &&
+                          incoming().keys().hasOnly(['aventonMode', 'baulVialMode', 'reclamosMode', 'proConversionMode', 'referralsMode', 'preTripChecklistMode', 'updatedAt']) &&
+                          isValidFeatureFlags(incoming()))
+                       ) &&
+                       (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time));
+      allow delete: if isAdmin();
+    }
+
     // --- Community Road Hazard & Pothole Alerts ---
+    // Active public road hazards can be read in Guest Mode (read-only); writes require Google Sign-In.
     match /alerts/{alertId} {
-      allow get: if isSignedIn() && (isValidId(alertId) || isAdmin());
-      allow list: if isSignedIn() && (resource.data.status in ['active', 'resolved'] || isAdmin());
+      allow get: if isValidId(alertId) && (isSignedIn() || (resource != null && resource.data.status == 'active'));
+      allow list: if resource.data.status == 'active' || (isSignedIn() && (resource.data.status in ['active', 'resolved'] || isAdmin()));
       allow create: if isSignedIn() &&
                        isValidId(alertId) &&
                        incoming().reporterUid == request.auth.uid &&

@@ -379,10 +379,11 @@ fun VoiceCopilotScreen(
             val commands = listOf(
                 Pair("Bache central", "Pozo peligroso que afecta ambos sentidos"),
                 Pair("Reportar pozo", "Publica un pozo/bache sobre tu carril"),
-                Pair("Control / radar", "Policía caminera, fotomulta o radar adelante"),
+                Pair("Radar vial", "Radar de velocidad o fotomulta adelante"),
                 Pair("Trabajos en ruta", "Obras viales y personal sobre calzada"),
                 Pair("Calzada deteriorada", "Advierte asfalto en muy mal estado"),
                 Pair("Mucha niebla", "Reporta visibilidad nula o humo"),
+                Pair("Desactivar recordatorio", "Apaga el chequeo pre-viaje hablado por voz"),
                 Pair("Silenciar alertas", "Mutea temporalmente los avisos sonoros")
             )
 
@@ -398,10 +399,16 @@ fun VoiceCopilotScreen(
                                         snackbarHostState.showSnackbar("Alertas silenciadas")
                                         return@launch
                                     }
+                                    if (cmd.contains("Desactivar recordatorio")) {
+                                        com.example.util.DriverPreferences.setPreTripChecklistEnabled(context, false)
+                                        voiceCopilotManager.speak("Recordatorio pre-viaje desactivado.")
+                                        snackbarHostState.showSnackbar("Chequeo pre-viaje desactivado")
+                                        return@launch
+                                    }
                                     val (type, depth, affectsBoth) = when {
                                         cmd.contains("Bache central") -> Triple("pozo", 20, true)
                                         cmd.contains("pozo") -> Triple("pozo", 18, false)
-                                        cmd.contains("Control") -> Triple("control_radar", 0, true)
+                                        cmd.contains("Radar") -> Triple("control_radar", 0, true)
                                         cmd.contains("Trabajos") -> Triple("trabajos_obra", 0, true)
                                         cmd.contains("deteriorada") -> Triple("ruta_detonada", 0, false)
                                         cmd.contains("niebla") -> Triple("neblina", 0, true)

@@ -38,10 +38,34 @@ beforeEach(async () => {
   }
 });
 
-// --- Unauthenticated tests ---
-test("Unauthenticated user: cannot read alerts", async () => {
+// --- Unauthenticated (Guest Mode) tests ---
+test("Unauthenticated guest: can read active alerts read-only, blocked from resolved or unfiltered queries", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const adminSeedDb = context.firestore();
+    await adminSeedDb.collection("alerts").doc("alert_active_1").set({
+      type: "pozo",
+      latitude: -35.5,
+      longitude: -58.0,
+      reporterUid: ALICE_UID,
+      status: "active",
+      createdAt: new Date(),
+    });
+    await adminSeedDb.collection("alerts").doc("alert_resolved_1").set({
+      type: "control_radar",
+      latitude: -35.6,
+      longitude: -58.1,
+      reporterUid: ALICE_UID,
+      status: "resolved",
+      createdAt: new Date(),
+    });
+  });
+
   const unauthDb = testEnv.unauthenticatedContext().firestore();
+  await assertSucceeds(unauthDb.collection("alerts").where("status", "==", "active").get());
+  await assertSucceeds(unauthDb.collection("alerts").doc("alert_active_1").get());
   await assertFails(unauthDb.collection("alerts").get());
+  await assertFails(unauthDb.collection("alerts").where("status", "==", "resolved").get());
+  await assertFails(unauthDb.collection("alerts").doc("alert_resolved_1").get());
 });
 
 test("Unauthenticated user: cannot create alert", async () => {
@@ -315,3 +339,236 @@ test("Admin redmond262@gmail.com can list & update user PRO status while non-adm
   await assertSucceeds(adminDb.collection("hitchhike_requests").get());
 });
 
+// --- Referral Codes & Referrals rules ---
+test("Referral code directory: single-doc lookup allowed for signed-in users, list blocked, ownership enforced", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+
+  // Alice creates her referral code
+  await assertSucceeds(
+    aliceDb.collection("referral_codes").doc("VIA-ALICE1").set({
+      code: "VIA-ALICE1",
+      ownerUid: ALICE_UID,
+      ownerName: "Alice",
+      createdAt: new Date(),
+    })
+  );
+
+  // Alice cannot spoof Bob's ownerUid
+  await assertFails(
+    aliceDb.collection("referral_codes").doc("VIA-FAKE01").set({
+      code: "VIA-FAKE01",
+      ownerUid: BOB_UID,
+      ownerName: "Bob",
+      createdAt: new Date(),
+    })
+  );
+
+  // Bob can look up a single code doc, but CANNOT list/scrape all codes
+  await assertSucceeds(bobDb.collection("referral_codes").doc("VIA-ALICE1").get());
+  await assertFails(bobDb.collection("referral_codes").get());
+});
+
+test("Referrals attribution: referee redeems once, blocks self-referral & hijack, referrer claims pending reward", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const charlieDb = testEnv.authenticatedContext("charlie_789").firestore();
+
+  await assertSucceeds(
+    aliceDb.collection("referral_codes").doc("VIA-ALICE1").set({
+      code: "VIA-ALICE1",
+      ownerUid: ALICE_UID,
+      ownerName: "Alice",
+      createdAt: new Date(),
+    })
+  );
+
+  // Self-referral must fail
+  await assertFails(
+    aliceDb.collection("referrals").doc(ALICE_UID).set({
+      refereeUid: ALICE_UID,
+      refereeName: "Alice",
+      referrerUid: ALICE_UID,
+      code: "VIA-ALICE1",
+      status: "pending",
+      rewardGrantedToReferee: true,
+      rewardGrantedToReferrer: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+  );
+
+  // Bob redeems Alice's code validly
+  await assertSucceeds(
+    bobDb.collection("referrals").doc(BOB_UID).set({
+      refereeUid: BOB_UID,
+      refereeName: "Bob",
+      referrerUid: ALICE_UID,
+      code: "VIA-ALICE1",
+      status: "pending",
+      rewardGrantedToReferee: true,
+      rewardGrantedToReferrer: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+  );
+
+  // Stranger Charlie cannot hijack or overwrite Bob's referral record
+  await assertFails(
+    charlieDb.collection("referrals").doc(BOB_UID).update({
+      rewardGrantedToReferrer: true,
+      status: "claimed",
+    })
+  );
+
+  // Referrer Alice can claim her pending reward once
+  await assertSucceeds(
+    aliceDb.collection("referrals").doc(BOB_UID).update({
+      rewardGrantedToReferrer: true,
+      status: "claimed",
+      updatedAt: new Date(),
+    })
+  );
+
+  // Duplicate claim after rewardGrantedToReferrer is true must fail for non-admin
+  await assertFails(
+    aliceDb.collection("referrals").doc(BOB_UID).update({
+      rewardGrantedToReferrer: true,
+      status: "claimed",
+    })
+  );
+});
+
+// --- App Billing Config rules ---
+test("App billing config: admin can write, signed-in user can read doc, non-admin cannot write", async () => {
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com" }).firestore();
+  const adminDb = testEnv.authenticatedContext("owner_uid", { email: "redmond262@gmail.com" }).firestore();
+
+  await assertFails(
+    bobDb.collection("app_config").doc("billing").set({
+      mercadoPagoAlias: "fake.alias",
+      proPriceArs: 1,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("app_config").doc("billing").set({
+      mercadoPagoAlias: "vialerta.oficial.mp",
+      proPriceArs: 5000,
+      paymentLinkUrl: "https://mpago.la/viaalerta",
+      updatedAt: new Date(),
+    })
+  );
+
+  await assertSucceeds(bobDb.collection("app_config").doc("billing").get());
+  await assertFails(bobDb.collection("app_config").get());
+});
+
+// --- Feature Flags (app_config/features) & Per-User Beta Testers rules ---
+test("Feature flags config: guest & users can get features doc, cannot list or write; admin controls modes", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com" }).firestore();
+  const adminDb = testEnv.authenticatedContext("owner_uid", { email: "redmond262@gmail.com" }).firestore();
+
+  // Non-admin cannot create or update app_config/features
+  await assertFails(
+    bobDb.collection("app_config").doc("features").set({
+      aventonMode: "public",
+      baulVialMode: "public",
+    })
+  );
+
+  // Admin rejects invalid mode string or extra unauthorized field
+  await assertFails(
+    adminDb.collection("app_config").doc("features").set({
+      aventonMode: "invalid_mode",
+      baulVialMode: "beta",
+    })
+  );
+  await assertFails(
+    adminDb.collection("app_config").doc("features").set({
+      aventonMode: "beta",
+      baulVialMode: "beta",
+      betaEmails: ["leak@example.com"],
+    })
+  );
+
+  // Admin writes valid feature rollout modes
+  await assertSucceeds(
+    adminDb.collection("app_config").doc("features").set({
+      aventonMode: "beta",
+      baulVialMode: "hidden",
+      reclamosMode: "public",
+      proConversionMode: "beta",
+      referralsMode: "public",
+      preTripChecklistMode: "public",
+      updatedAt: new Date(),
+    })
+  );
+
+  // Unauthenticated Guest Mode and normal users can get app_config/features (zero PII)
+  await assertSucceeds(unauthDb.collection("app_config").doc("features").get());
+  await assertSucceeds(bobDb.collection("app_config").doc("features").get());
+
+  // Neither guest nor Bob can list app_config (so app_config/billing stays private from guests)
+  await assertFails(unauthDb.collection("app_config").get());
+  await assertFails(unauthDb.collection("app_config").doc("billing").get());
+  await assertFails(bobDb.collection("app_config").get());
+});
+
+test("User isBetaTester flag: blocks self-escalation on create/update, allows admin toggle and normal profile edits", async () => {
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com" }).firestore();
+  const adminDb = testEnv.authenticatedContext("owner_uid", { email: "redmond262@gmail.com" }).firestore();
+
+  // Non-admin cannot create profile with isBetaTester: true
+  await assertFails(
+    bobDb.collection("users").doc(BOB_UID).set({
+      userId: BOB_UID,
+      name: "Bob Hack",
+      email: "bob@example.com",
+      isBetaTester: true,
+      createdAt: new Date(),
+    })
+  );
+
+  // Non-admin creates normal profile (isBetaTester: false)
+  await assertSucceeds(
+    bobDb.collection("users").doc(BOB_UID).set({
+      userId: BOB_UID,
+      name: "Bob Conductor",
+      email: "bob@example.com",
+      isBetaTester: false,
+      createdAt: new Date(),
+    })
+  );
+
+  // Non-admin cannot self-promote to beta tester
+  await assertFails(
+    bobDb.collection("users").doc(BOB_UID).update({
+      isBetaTester: true,
+    })
+  );
+
+  // Non-admin can update allowed profile fields when keeping isBetaTester unchanged
+  await assertSucceeds(
+    bobDb.collection("users").doc(BOB_UID).update({
+      name: "Bob Ruta 2",
+      isBetaTester: false,
+      updatedAt: new Date(),
+    })
+  );
+
+  // Admin can promote & demote user beta status
+  await assertSucceeds(
+    adminDb.collection("users").doc(BOB_UID).update({
+      isBetaTester: true,
+      updatedAt: new Date(),
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("users").doc(BOB_UID).update({
+      isBetaTester: false,
+      updatedAt: new Date(),
+    })
+  );
+});

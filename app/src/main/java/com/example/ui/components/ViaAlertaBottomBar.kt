@@ -24,11 +24,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,6 +58,9 @@ fun ViaAlertaBottomBar(
     selectedTabIndex: Int,
     onTabSelected: (Int) -> Unit,
     isListening: Boolean = false,
+    showBaulVial: Boolean = true,
+    showAventon: Boolean = true,
+    showReclamos: Boolean = true,
     onCenterMicClicked: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -110,38 +114,54 @@ fun ViaAlertaBottomBar(
                     modifier = Modifier.weight(1f)
                 )
 
-                // Tab 8: Baúl Vial (Objetos encontrados y extravíos)
-                BottomNavItem(
-                    icon = Icons.Default.Inventory2,
-                    label = "Baúl Vial",
-                    isSelected = selectedTabIndex == 8,
-                    testTag = "nav_item_baul_vial",
-                    onClick = { onTabSelected(8) },
-                    modifier = Modifier.weight(1f)
-                )
+                // Tab 8: Baúl Vial (gated remotely; Beta/Public)
+                if (showBaulVial) {
+                    BottomNavItem(
+                        icon = Icons.Default.Inventory2,
+                        label = "Baúl Vial",
+                        isSelected = selectedTabIndex == 8,
+                        testTag = "nav_item_baul_vial",
+                        onClick = { onTabSelected(8) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
                 // Center placeholder for elevated mic button
                 Spacer(modifier = Modifier.weight(1.1f))
 
-                // Tab 3: Aventón
-                BottomNavItem(
-                    icon = Icons.Default.Group,
-                    label = "Aventón",
-                    isSelected = selectedTabIndex == 3,
-                    testTag = "nav_item_hitchhike",
-                    onClick = { onTabSelected(3) },
-                    modifier = Modifier.weight(1f)
-                )
+                // Tab 3: Aventón (gated remotely; Beta/Public)
+                if (showAventon) {
+                    BottomNavItem(
+                        icon = Icons.Default.Group,
+                        label = "Aventón",
+                        isSelected = selectedTabIndex == 3,
+                        testTag = "nav_item_hitchhike",
+                        onClick = { onTabSelected(3) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
-                // Tab 4: Reclamos
-                BottomNavItem(
-                    icon = Icons.Default.Assignment,
-                    label = "Reclamos",
-                    isSelected = selectedTabIndex == 4,
-                    testTag = "nav_item_reclamos",
-                    onClick = { onTabSelected(4) },
-                    modifier = Modifier.weight(1f)
-                )
+                // Tab 4: Reclamos (gated remotely)
+                if (showReclamos) {
+                    BottomNavItem(
+                        icon = Icons.AutoMirrored.Filled.Assignment,
+                        label = "Reclamos",
+                        isSelected = selectedTabIndex == 4,
+                        testTag = "nav_item_reclamos",
+                        onClick = { onTabSelected(4) },
+                        modifier = Modifier.weight(1f)
+                    )
+                } else if (!showAventon) {
+                    // Symmetrical right-side shortcut to Perfil when both Aventón & Reclamos are hidden
+                    BottomNavItem(
+                        icon = Icons.Default.Person,
+                        label = "Perfil",
+                        isSelected = selectedTabIndex == 6,
+                        testTag = "nav_item_profile_fallback",
+                        onClick = { onTabSelected(6) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 

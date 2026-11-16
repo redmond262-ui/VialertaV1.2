@@ -1,6 +1,9 @@
 package com.example
 
+import com.example.data.model.FeatureMode
 import com.example.data.model.RoadAlert
+import com.example.data.repository.FeatureFlagsRepository
+import com.example.data.repository.UserRepository
 import com.example.util.DriverLocation
 import com.example.util.DriverPreferences
 import com.example.util.LocationRadarManager
@@ -177,7 +180,96 @@ class DriverLogicUnitTest {
         assertTrue(VoiceCopilotManager.isUndoSpeechCommand(listOf("fue un error")))
 
         assertFalse(VoiceCopilotManager.isUndoSpeechCommand(listOf("bache profundo en mi mano")))
-        assertFalse(VoiceCopilotManager.isUndoSpeechCommand(listOf("control policial adelante")))
+        assertFalse(VoiceCopilotManager.isUndoSpeechCommand(listOf("radar de velocidad adelante")))
         assertFalse(VoiceCopilotManager.isUndoSpeechCommand(emptyList()))
     }
+
+    @Test
+    fun isDisablePreTripReminderCommand_detectsVoiceOptOutAndIgnoresHazards() {
+        assertTrue(VoiceCopilotManager.isDisablePreTripReminderCommand(listOf("desactivar recordatorio")))
+        assertTrue(VoiceCopilotManager.isDisablePreTripReminderCommand(listOf("Silenciar chequeo por favor")))
+        assertTrue(VoiceCopilotManager.isDisablePreTripReminderCommand(listOf("no me avises más")))
+        assertTrue(VoiceCopilotManager.isDisablePreTripReminderCommand(listOf("sacar checklist")))
+
+        assertFalse(VoiceCopilotManager.isDisablePreTripReminderCommand(listOf("pozo en el carril")))
+        assertFalse(VoiceCopilotManager.isDisablePreTripReminderCommand(listOf("radar adelante")))
+        assertFalse(VoiceCopilotManager.isDisablePreTripReminderCommand(emptyList()))
+    }
+
+    @Test
+    fun preTripChecklist_respectsTwelveHourGatingAndVehicleAdaptation() {
+        val now = 1_750_000_000_000L
+        val sixHoursAgo = now - (6L * 60L * 60L * 1000L)
+        val thirteenHoursAgo = now - (13L * 60L * 60L * 1000L)
+
+        assertFalse(DriverPreferences.canSpeakPreTripChecklist(enabled = false, lastSpokenMillis = 0L, nowMillis = now))
+        assertFalse(DriverPreferences.canSpeakPreTripChecklist(enabled = true, lastSpokenMillis = sixHoursAgo, nowMillis = now))
+        assertTrue(DriverPreferences.canSpeakPreTripChecklist(enabled = true, lastSpokenMillis = thirteenHoursAgo, nowMillis = now))
+
+        val autoSpeech = DriverPreferences.buildPreTripChecklistSpeech(DriverPreferences.VEHICLE_AUTO)
+        val motoSpeech = DriverPreferences.buildPreTripChecklistSpeech(DriverPreferences.VEHICLE_MOTO)
+        val truckSpeech = DriverPreferences.buildPreTripChecklistSpeech(DriverPreferences.VEHICLE_CAMION)
+
+        assertTrue(autoSpeech.contains("cinturón"))
+        assertTrue(motoSpeech.contains("casco"))
+        assertTrue(truckSpeech.contains("camión"))
+    }
+
+    @Test
+    fun proConversionCooldownAndMilestones_enforce7dThen20dAfter3Dismissals() {
+        val now = 1_750_000_000_000L
+        val fiveDaysAgo = now - (5L * DriverPreferences.ONE_DAY_MS)
+        val tenDaysAgo = now - (10L * DriverPreferences.ONE_DAY_MS)
+        val twentyTwoDaysAgo = now - (22L * DriverPreferences.ONE_DAY_MS)
+
+        // Never dismissed -> not on cooldown
+        assertFalse(DriverPreferences.isProCooldownActive(0L, 0, now))
+        // Dismissed once 5 days ago -> active (< 7d)
+        assertTrue(DriverPreferences.isProCooldownActive(fiveDaysAgo, 1, now))
+        // Dismissed once 10 days ago -> expired (>= 7d)
+        assertFalse(DriverPreferences.isProCooldownActive(tenDaysAgo, 1, now))
+        // Dismissed 3+ times 10 days ago -> still active (< 20d)
+        assertTrue(DriverPreferences.isProCooldownActive(tenDaysAgo, 3, now))
+        // Dismissed 3+ times 22 days ago -> expired (>= 20d)
+        assertFalse(DriverPreferences.isProCooldownActive(twentyTwoDaysAgo, 3, now))
+
+        // Milestones progression
+        assertEquals(15, DriverPreferences.nextMilestoneReached(totalAvoided = 16, lastShownMilestone = 0))
+        assertEquals(null, DriverPreferences.nextMilestoneReached(totalAvoided = 18, lastShownMilestone = 15))
+        assertEquals(25, DriverPreferences.nextMilestoneReached(totalAvoided = 25, lastShownMilestone = 15))
+    }
+
+    @Test
+    fun referralCodeHelpers_formatNormalizeAndValidateProperly() {
+        val code = UserRepository.buildReferralCode("aB12cdEfGhIj")
+        assertEquals("VIA-AB12CD", code)
+        assertTrue(UserRepository.isValidReferralCodeFormat(code))
+        assertEquals("VIA-XYZ987", UserRepository.normalizeReferralCode("  via-xyz 987 "))
+        assertTrue(UserRepository.isValidReferralCodeFormat("VIA-XYZ987"))
+        assertFalse(UserRepository.isValidReferralCodeFormat("XYZ"))
+    }
+
+    @Test
+    fun featureFlagsRepository_evaluatesRolloutModesAndSanitizesProperly() {
+        // HIDDEN blocks everyone including admin & beta testers
+        assertFalse(FeatureFlagsRepository.isModuleEnabled(FeatureMode.HIDDEN, isAdmin = false, isBetaTester = false))
+        assertFalse(FeatureFlagsRepository.isModuleEnabled(FeatureMode.HIDDEN, isAdmin = false, isBetaTester = true))
+        assertFalse(FeatureFlagsRepository.isModuleEnabled(FeatureMode.HIDDEN, isAdmin = true, isBetaTester = false))
+
+        // BETA enables only admin or beta testers
+        assertFalse(FeatureFlagsRepository.isModuleEnabled(FeatureMode.BETA, isAdmin = false, isBetaTester = false))
+        assertTrue(FeatureFlagsRepository.isModuleEnabled(FeatureMode.BETA, isAdmin = false, isBetaTester = true))
+        assertTrue(FeatureFlagsRepository.isModuleEnabled(FeatureMode.BETA, isAdmin = true, isBetaTester = false))
+
+        // PUBLIC enables everyone including guests
+        assertTrue(FeatureFlagsRepository.isModuleEnabled(FeatureMode.PUBLIC, isAdmin = false, isBetaTester = false))
+        assertTrue(FeatureFlagsRepository.isModuleEnabled(FeatureMode.PUBLIC, isAdmin = false, isBetaTester = true))
+
+        // sanitizeMode normalizes valid modes and falls back to BETA
+        assertEquals(FeatureMode.HIDDEN, FeatureFlagsRepository.sanitizeMode(" HIDDEN "))
+        assertEquals(FeatureMode.PUBLIC, FeatureFlagsRepository.sanitizeMode("public"))
+        assertEquals(FeatureMode.BETA, FeatureFlagsRepository.sanitizeMode("unknown_value"))
+        assertEquals(FeatureMode.BETA, FeatureFlagsRepository.sanitizeMode(null))
+    }
 }
+

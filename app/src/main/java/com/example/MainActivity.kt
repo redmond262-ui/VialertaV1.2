@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -40,8 +42,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.credentials.CredentialManager
+import com.example.data.model.AppBillingConfig
+import com.example.data.model.AppFeatureFlags
 import com.example.data.model.UserProfile
 import com.example.data.repository.BaulVialRepository
+import com.example.data.repository.BillingConfigRepository
+import com.example.data.repository.FeatureFlagsRepository
 import com.example.data.repository.HitchhikeRepository
 import com.example.data.repository.RoadAlertRepository
 import com.example.data.repository.SosRepository
@@ -321,23 +327,43 @@ fun MainScaffold(
     val hitchhikeRepo = remember { HitchhikeRepository(context) }
     val baulVialRepo = remember { BaulVialRepository(context) }
     val userRepo = remember { UserRepository(context) }
+    val billingRepo = remember { BillingConfigRepository(context) }
+    val featureFlagsRepo = remember { FeatureFlagsRepository(context) }
     val presenceRepo = remember { com.example.data.repository.PresenceRepository(context) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val userProfile by if (isGuestMode) {
         remember { mutableStateOf<UserProfile?>(null) }
     } else {
         userRepo.observeUserProfile(currentUserId).collectAsState(initial = null)
     }
-    val waitingHitchhikes by if (isGuestMode) {
+    val billingConfig by if (isGuestMode) {
+        remember { mutableStateOf(AppBillingConfig()) }
+    } else {
+        billingRepo.observeBillingConfig().collectAsState(initial = AppBillingConfig())
+    }
+    val featureFlags by featureFlagsRepo.observeFeatureFlags()
+        .collectAsState(initial = FeatureFlagsRepository.getCachedFeatureFlags(context))
+
+    val currentUserEmail = if (isGuestMode) "" else Firebase.auth.currentUser?.email?.lowercase()?.trim() ?: ""
+    val isOwnerOrAdmin = !isGuestMode && (currentUserEmail == "redmond262@gmail.com" ||
+            userProfile?.trustRole == "admin" ||
+            userProfile?.name?.contains("admin", ignoreCase = true) == true)
+    val isBetaTesterUser = !isGuestMode && (userProfile?.isBetaTester == true)
+
+    val showAventonModule = FeatureFlagsRepository.isModuleEnabled(featureFlags.aventonMode, isOwnerOrAdmin, isBetaTesterUser)
+    val showBaulVialModule = FeatureFlagsRepository.isModuleEnabled(featureFlags.baulVialMode, isOwnerOrAdmin, isBetaTesterUser)
+    val showReclamosModule = FeatureFlagsRepository.isModuleEnabled(featureFlags.reclamosMode, isOwnerOrAdmin, isBetaTesterUser)
+    val showProConversionModule = FeatureFlagsRepository.isModuleEnabled(featureFlags.proConversionMode, isOwnerOrAdmin, isBetaTesterUser)
+    val showReferralsModule = FeatureFlagsRepository.isModuleEnabled(featureFlags.referralsMode, isOwnerOrAdmin, isBetaTesterUser)
+    val showPreTripModule = FeatureFlagsRepository.isModuleEnabled(featureFlags.preTripChecklistMode, isOwnerOrAdmin, isBetaTesterUser)
+
+    val waitingHitchhikes by if (isGuestMode || !showAventonModule) {
         remember { mutableStateOf(emptyList()) }
     } else {
         hitchhikeRepo.observeWaitingHitchhikes().collectAsState(initial = emptyList())
     }
-    val activeAlerts by if (isGuestMode) {
-        remember { mutableStateOf(emptyList()) }
-    } else {
-        roadAlertRepo.observeActiveAlerts().collectAsState(initial = emptyList())
-    }
+    val activeAlerts by roadAlertRepo.observeActiveAlerts().collectAsState(initial = emptyList())
     val driverLoc by locationRadarManager.currentLocation.collectAsState()
 
     // Request location & notification permissions for background copilot and live radar
@@ -403,10 +429,16 @@ fun MainScaffold(
         }
     }
 
-    // Grant 7-day PRO trial to new users upon login
+    // Grant 7-day PRO trial to new users and claim any pending referral rewards upon login
     LaunchedEffect(currentUserId, isGuestMode) {
         if (!isGuestMode) {
             userRepo.grantWelcomeProTrialIfEligible(currentUserId)
+            val claimed = userRepo.claimPendingReferralRewards(currentUserId).getOrDefault(0)
+            if (claimed > 0) {
+                snackbarHostState.showSnackbar(
+                    "🎁 ¡Sumaste +${claimed * UserRepository.REFERRAL_BONUS_POINTS} pts/XP y +${claimed * UserRepository.REFERRAL_BONUS_DAYS} días PRO por tus invitados!"
+                )
+            }
         }
     }
 
@@ -458,11 +490,6 @@ fun MainScaffold(
             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
-
-    val currentUserEmail = if (isGuestMode) "" else Firebase.auth.currentUser?.email?.lowercase()?.trim() ?: ""
-    val isOwnerOrAdmin = !isGuestMode && (currentUserEmail == "redmond262@gmail.com" ||
-            userProfile?.trustRole == "admin" ||
-            userProfile?.name?.contains("admin", ignoreCase = true) == true)
 
     // Keep screen awake while actively driving (> 15 km/h) or navigating a traced route
     val isInMotionForScreen = isActiveTripNavigation || driverLoc.speedKmH > 15f
@@ -582,8 +609,19 @@ fun MainScaffold(
         }
     }
 
+    // Redirect back to Map if Admin remotely hides an active secondary module tab
+    LaunchedEffect(showAventonModule, showBaulVialModule, showReclamosModule, selectedTabIndex) {
+        val disallowed = (selectedTabIndex == 3 && !showAventonModule) ||
+            (selectedTabIndex == 8 && !showBaulVialModule) ||
+            (selectedTabIndex == 4 && !showReclamosModule)
+        if (disallowed) {
+            selectedTabIndex = 0
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (selectedTabIndex == 0 && !isActiveTripNavigation) {
                 ViaAlertaTopBar(
@@ -613,6 +651,9 @@ fun MainScaffold(
                 selectedTabIndex = selectedTabIndex,
                 onTabSelected = { selectedTabIndex = it },
                 isListening = !isGuestMode && isVoiceListening,
+                showBaulVial = showBaulVialModule,
+                showAventon = showAventonModule,
+                showReclamos = showReclamosModule,
                 onCenterMicClicked = {
                     // Stay right on the live map if already navigating/viewing Map; switch to Copilot from other tabs
                     triggerVoiceWithPermission(stayOnCurrentTab = (selectedTabIndex == 0))
@@ -650,10 +691,16 @@ fun MainScaffold(
                         locationRadarManager = locationRadarManager,
                         voiceCopilotManager = voiceCopilotManager,
                         userProfile = userProfile,
+                        billingConfig = billingConfig,
+                        proConversionEnabled = showProConversionModule,
+                        preTripChecklistRemoteEnabled = showPreTripModule,
                         isGuestMode = isGuestMode,
                         onRequestGoogleLogin = onRequestGoogleLogin,
                         onNavigateToCopilot = {
                             triggerVoiceWithPermission(stayOnCurrentTab = false)
+                        },
+                        onNavigateToProfile = {
+                            selectedTabIndex = 6
                         },
                         onNavigationActiveChanged = { active ->
                             isActiveTripNavigation = active
@@ -693,6 +740,8 @@ fun MainScaffold(
                         userProfile = userProfile,
                         userRepository = userRepo,
                         roadAlertRepository = roadAlertRepo,
+                        showReferralsModule = showReferralsModule,
+                        showPreTripChecklistModule = showPreTripModule,
                         onNavigateToAdmin = { selectedTabIndex = 7 },
                         onSignOutClicked = onSignOutClicked
                     )
@@ -704,6 +753,7 @@ fun MainScaffold(
                         hitchhikeRepository = hitchhikeRepo,
                         userRepository = userRepo,
                         presenceRepository = presenceRepo,
+                        featureFlagsRepository = featureFlagsRepo,
                         onNavigateBack = { selectedTabIndex = 0 }
                     )
                     8 -> BaulVialScreen(
@@ -759,7 +809,7 @@ private fun GuestFeatureGateScreen(
                 )
                 androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Estás navegando en Modo Invitado (limitado solo al mapa GPS y búsqueda básica). Iniciá sesión con Google para activar todas las funciones con 7 días de prueba completa.",
+                    text = "Estás navegando en Modo Invitado (mapa GPS, buscador y lectura de alertas en tiempo real). Iniciá sesión con Google para reportar peligros, activar el Copiloto, Aventón, Baúl Vial y SOS con 7 días de prueba completa.",
                     color = Color.White.copy(alpha = 0.78f),
                     fontSize = 13.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center

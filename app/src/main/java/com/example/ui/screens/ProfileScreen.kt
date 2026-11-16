@@ -22,10 +22,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Save
@@ -92,6 +97,8 @@ fun ProfileScreen(
     userProfile: UserProfile?,
     userRepository: UserRepository,
     roadAlertRepository: RoadAlertRepository? = null,
+    showReferralsModule: Boolean = true,
+    showPreTripChecklistModule: Boolean = true,
     onNavigateToAdmin: (() -> Unit)? = null,
     onSignOutClicked: () -> Unit
 ) {
@@ -116,6 +123,10 @@ fun ProfileScreen(
     var nightModePref by remember { mutableStateOf(DriverPreferences.getNightModePreference(context)) }
     var shakeDetectorEnabled by remember { mutableStateOf(DriverPreferences.isShakeDetectorEnabled(context)) }
     var btMediaVoiceEnabled by remember { mutableStateOf(DriverPreferences.isBluetoothMediaVoiceEnabled(context)) }
+    var vehicleType by remember { mutableStateOf(DriverPreferences.getVehicleType(context)) }
+    var preTripChecklistEnabled by remember { mutableStateOf(DriverPreferences.isPreTripChecklistEnabled(context)) }
+    var referralInput by remember { mutableStateOf("") }
+    var isRedeemingReferral by remember { mutableStateOf(false) }
 
     val activeAlerts by (roadAlertRepository?.observeActiveAlerts() ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
     val myAlerts = remember(activeAlerts, currentUserId) {
@@ -417,22 +428,40 @@ fun ProfileScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        Surface(
-                            color = if (isProActive) Amber500.copy(alpha = 0.2f) else Slate800,
-                            shape = RoundedCornerShape(8.dp),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (isProActive) Amber400 else Slate700
-                            )
-                        ) {
-                            Text(
-                                text = if (isProActive) "PRO ⭐" else "GRATIS",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isProActive) Amber400 else Color.White.copy(alpha = 0.8f),
-                                maxLines = 1
-                            )
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Surface(
+                                color = if (isProActive) Amber500.copy(alpha = 0.2f) else Slate800,
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isProActive) Amber400 else Slate700
+                                )
+                            ) {
+                                Text(
+                                    text = if (isProActive) "PRO ⭐" else "GRATIS",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isProActive) Amber400 else Color.White.copy(alpha = 0.8f),
+                                    maxLines = 1
+                                )
+                            }
+                            if (userProfile?.isBetaTester == true) {
+                                Surface(
+                                    color = RouteBlue500.copy(alpha = 0.18f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, RouteBlue500.copy(alpha = 0.7f))
+                                ) {
+                                    Text(
+                                        text = "🧪 BETA",
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Black,
+                                        color = RouteBlue500,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -442,6 +471,7 @@ fun ProfileScreen(
 
             // Gamification: PUNTOS RUTA CARD
             val userPoints = userProfile?.pointsRuta ?: 0
+            val userXpTotal = kotlin.math.max(userProfile?.xpTotal ?: 0, userPoints)
             val todayPoints = userProfile?.dailyPointsEarned ?: 0
             val maxDaily = 200
 
@@ -486,7 +516,7 @@ fun ProfileScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "$todayPoints / $maxDaily pts acumulados hoy (Tope)",
+                                    text = "$todayPoints / $maxDaily pts hoy • $userXpTotal XP acumulada",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White.copy(alpha = 0.7f),
                                     maxLines = 1,
@@ -518,7 +548,7 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "+30 pts por reportar peligro | +15 pts al validar alerta de otro chofer (o luego de 4 hs al volver).",
+                        text = "+30 pts por reportar peligro | +15 pts al validar alerta de otro chofer | +150 pts/XP por cada invitado.",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.6f)
                     )
@@ -532,7 +562,7 @@ fun ProfileScreen(
                             contentColor = Color.Black
                         ),
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("redeem_points_btn")
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("redeem_points_btn")
                     ) {
                         Icon(Icons.Default.CardGiftcard, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -542,6 +572,194 @@ fun ProfileScreen(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
+
+            // 1.3 Sistema de Referidos + Recompensa PRO
+            val myReferralCode = userProfile?.referralCode?.ifBlank { null } ?: UserRepository.buildReferralCode(currentUserId)
+            if (showReferralsModule) {
+                val referralsCount = userProfile?.referralCount ?: 0
+            Surface(
+                color = Slate900,
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Amber400.copy(alpha = 0.55f)),
+                modifier = Modifier.fillMaxWidth().testTag("referrals_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Amber500.copy(alpha = 0.2f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.GroupAdd, contentDescription = null, tint = Amber400, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Invitá Conductores y Sumá PRO",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "+150 pts/XP y +7 días PRO para ambos",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Amber400,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        Surface(
+                            color = Slate800,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "$referralsCount invitados",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SafetyGreen500,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Surface(
+                        color = Slate800,
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Slate700),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Tu código personal:", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
+                                Text(
+                                    text = myReferralCode,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = Amber400
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                        cm?.setPrimaryClip(ClipData.newPlainText("Código VíaAlerta", myReferralCode))
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar("📋 Código $myReferralCode copiado")
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("referral_copy_code_btn"),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Amber400),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copiar código", tint = Amber400, modifier = Modifier.size(16.dp))
+                                }
+
+                                Button(
+                                    onClick = {
+                                        val inviteMsg = """
+                                            🚗 *Te invito a VíaAlerta — Radar Vial Comunitario*
+                                            
+                                            Avisos por voz de baches críticos, calzada rota, obras, niebla y radares viales sin controles policiales.
+                                            
+                                            🎁 Descargá la app desde la web oficial:
+                                            https://gen-lang-client-0699193083.web.app
+                                            
+                                            👉 Ingresá mi código *$myReferralCode* en tu Perfil para sumar *+150 pts/XP y +7 días PRO gratis*.
+                                        """.trimIndent()
+                                        com.example.ui.components.shareViaWhatsApp(context, inviteMsg)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Color.Black),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("referral_share_whatsapp_btn")
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Invitar", fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (userProfile?.referredByCode.isNullOrBlank()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = referralInput,
+                                onValueChange = { referralInput = it.uppercase() },
+                                label = { Text("¿Te invitaron? Código VIA-...", maxLines = 1) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f).testTag("referral_code_input"),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Amber500,
+                                    unfocusedBorderColor = Slate700
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            Button(
+                                onClick = {
+                                    isRedeemingReferral = true
+                                    coroutineScope.launch {
+                                        val res = userRepository.redeemReferralCode(referralInput)
+                                        isRedeemingReferral = false
+                                        if (res.isSuccess) {
+                                            referralInput = ""
+                                            snackbarHostState.showSnackbar(res.getOrNull() ?: "¡Código aplicado!")
+                                        } else {
+                                            snackbarHostState.showSnackbar(res.exceptionOrNull()?.message ?: "No se pudo aplicar el código.")
+                                        }
+                                    }
+                                },
+                                enabled = !isRedeemingReferral && referralInput.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = SafetyGreen500, contentColor = Color.Black),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.heightIn(min = 52.dp).testTag("apply_referral_code_btn")
+                            ) {
+                                Text(if (isRedeemingReferral) "..." else "Aplicar", fontWeight = FontWeight.Black)
+                            }
+                        }
+                    } else {
+                        Surface(
+                            color = SafetyGreen500.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, SafetyGreen500.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "✅ Invitación aplicada (${userProfile?.referredByCode}) — +150 pts/XP y +7 días PRO acreditados",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SafetyGreen500,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            }
 
             // Re-open Onboarding Tutorial Button
             OutlinedButton(
@@ -706,6 +924,70 @@ fun ProfileScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Tipo de Vehículo (para Chequeo Pre-Viaje):",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Amber400,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            DriverPreferences.VEHICLE_AUTO to "🚗 Auto",
+                            DriverPreferences.VEHICLE_MOTO to "🏍️ Moto",
+                            DriverPreferences.VEHICLE_CAMION to "🚛 Camión"
+                        ).forEach { (vKey, vLabel) ->
+                            val selected = vehicleType == vKey
+                            Surface(
+                                color = if (selected) SafetyGreen500 else Slate800,
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) Color.White else Slate700),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .clickable {
+                                        vehicleType = vKey
+                                        DriverPreferences.setVehicleType(context, vKey)
+                                    }
+                                    .testTag("vehicle_type_opt_$vKey")
+                            ) {
+                                Box(modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = vLabel,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selected) Color.Black else Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (showPreTripChecklistModule) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Chequeo Rápido de Seguridad Pre-Viaje", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                Text("Breve recordatorio hablado al iniciar ruta (máx 1 vez c/ 12h). Podés decir «desactivar recordatorio».", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
+                            }
+                            androidx.compose.material3.Switch(
+                                checked = preTripChecklistEnabled,
+                                onCheckedChange = {
+                                    preTripChecklistEnabled = it
+                                    DriverPreferences.setPreTripChecklistEnabled(context, it)
+                                },
+                                modifier = Modifier.testTag("pretrip_checklist_switch")
+                            )
                         }
                     }
 
@@ -1032,19 +1314,22 @@ fun ProfileScreen(
 
                     Button(
                         onClick = {
+                            val referralLine = if (showReferralsModule) {
+                                "\n\n🎁 Usá mi código de invitación *$myReferralCode* para sumar +150 pts/XP y +7 días PRO gratis."
+                            } else {
+                                ""
+                            }
                             val viralText = """
                                 🚗 *Sumate a VíaAlerta - Red Comunitaria de Rutas Argentinas*
                                 
                                 Avisos por voz automáticos y en tiempo real de:
                                 🕳️ Pozos y baches profundos con aviso de rotura
-                                💥 Tramos de calzada deteriorada
+                                📷 Radares viales y límites de velocidad
                                 🚧 Trabajos en ruta y desvíos
                                 🌊 Agua acumulada y visibilidad por niebla
                                 
-                                📲 Descargá e instalá la app directa en tu teléfono:
-                                https://gofile.io/d/iciRSitS
-                                
-                                ¡Entre todos cuidamos nuestras rutas y nuestros autos!
+                                📲 Descargá e instalá la app directa desde la web oficial:
+                                https://gen-lang-client-0699193083.web.app$referralLine
                             """.trimIndent()
                             com.example.ui.components.shareViaWhatsApp(context, viralText)
                         },
@@ -1093,7 +1378,7 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
                         Text(
-                            text = "VíaAlerta v1.0",
+                            text = "VíaAlerta v2.1",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White

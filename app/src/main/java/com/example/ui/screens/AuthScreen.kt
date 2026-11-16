@@ -250,7 +250,7 @@ fun AuthScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Modo invitado: solo mapa GPS, velocímetro y buscador básico de ruta. Sin alertas de comunidad, voz, SOS ni Baúl Vial.",
+                text = "Modo invitado: podés ver pozos y alertas reales en el mapa (solo lectura) y usar el velocímetro. Para reportar, usar voz, Aventón, Baúl Vial o SOS iniciá sesión con Google.",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White.copy(alpha = 0.55f),
                 textAlign = TextAlign.Center,

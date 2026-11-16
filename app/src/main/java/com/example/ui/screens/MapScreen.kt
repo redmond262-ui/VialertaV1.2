@@ -81,6 +81,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.AppBillingConfig
 import com.example.data.model.HitchhikeRequest
 import com.example.data.model.RoadAlert
 import com.example.data.model.UserProfile
@@ -89,6 +90,8 @@ import com.example.data.repository.SosRepository
 import com.example.data.repository.UserRepository
 import com.example.ui.components.HazardDetailBottomSheet
 import com.example.ui.components.HazardFilterBottomSheet
+import com.example.ui.components.ProConversionDialog
+import com.example.ui.components.ProConversionTrigger
 import com.example.ui.components.QuickReportDialog
 import com.example.ui.components.RealRoadMapView
 import com.example.ui.theme.AlertRed500
@@ -128,9 +131,13 @@ fun MapScreen(
     locationRadarManager: LocationRadarManager,
     voiceCopilotManager: VoiceCopilotManager,
     userProfile: UserProfile? = null,
+    billingConfig: AppBillingConfig = AppBillingConfig(),
+    proConversionEnabled: Boolean = true,
+    preTripChecklistRemoteEnabled: Boolean = true,
     isGuestMode: Boolean = false,
     onRequestGoogleLogin: () -> Unit = {},
     onNavigateToCopilot: () -> Unit = {},
+    onNavigateToProfile: () -> Unit = {},
     onNavigationActiveChanged: (Boolean) -> Unit = {},
     onRequestVoiceListening: () -> Unit = {}
 ) {
@@ -143,11 +150,7 @@ fun MapScreen(
     val isHandsFreeLoop by voiceCopilotManager.isHandsFreeLoop.collectAsState()
     val voiceStatusMessage by voiceCopilotManager.copilotStatusMessage.collectAsState()
 
-    val activeAlerts by if (isGuestMode) {
-        remember { mutableStateOf(emptyList()) }
-    } else {
-        roadAlertRepository.observeActiveAlerts().collectAsState(initial = emptyList())
-    }
+    val activeAlerts by roadAlertRepository.observeActiveAlerts().collectAsState(initial = emptyList())
     val activeSos by if (isGuestMode) {
         remember { mutableStateOf(emptyList()) }
     } else {
@@ -209,6 +212,11 @@ fun MapScreen(
     var incidentDelaySeconds by remember { mutableLongStateOf(0L) }
     var incidentDelaySummary by remember { mutableStateOf("") }
     var showExitTripDialog by remember { mutableStateOf(false) }
+
+    // Smart PRO conversion state (evaluated strictly when stopped)
+    var tripStartAvoidedCount by remember { mutableIntStateOf(-1) }
+    var pendingPostTripHazards by remember { mutableIntStateOf(0) }
+    var activeProTrigger by remember { mutableStateOf<ProConversionTrigger?>(null) }
 
     // Notify MainActivity when active turn-by-turn navigation hides/shows global top bar
     LaunchedEffect(isRouteActive) {
@@ -376,6 +384,13 @@ fun MapScreen(
             // Auto-finish trip smoothly upon arriving at destination (< 150m & slowing down)
             if (directDestDist < 150.0 && driverLocation.speedKmH < 22f && baseRouteDistanceMeters > 300.0) {
                 isRouteActive = false
+                if (tripStartAvoidedCount >= 0) {
+                    val avoidedInTrip = (DriverPreferences.getAvoidedHazardsTotal(context) - tripStartAvoidedCount).coerceAtLeast(0)
+                    tripStartAvoidedCount = -1
+                    if (avoidedInTrip >= 3) {
+                        pendingPostTripHazards = avoidedInTrip
+                    }
+                }
                 voiceCopilotManager.speak("Has llegado a tu destino, ${dest.title}. Buen viaje.", isWarning = false)
                 selectedDestination = null
                 routePolyline = emptyList()
@@ -475,6 +490,54 @@ fun MapScreen(
                 isProUser = isProEffective,
                 currentUserId = currentUserId
             )
+        }
+    }
+
+    // 1.4 Smart Non-Invasive PRO Conversion Triggers (only when vehicle is completely stopped)
+    LaunchedEffect(
+        driverLocation.speedKmH,
+        isSimulatingDrive,
+        isGuestMode,
+        isProEffective,
+        userProfile,
+        pendingPostTripHazards,
+        proConversionEnabled
+    ) {
+        if (!proConversionEnabled || isGuestMode || isSimulatingDrive || driverLocation.speedKmH >= 5f || activeProTrigger != null) {
+            return@LaunchedEffect
+        }
+        val inCooldown = DriverPreferences.isProCooldownActive(
+            lastDismissedMillis = DriverPreferences.getLastProDismissedMillis(context),
+            dismissCount = DriverPreferences.getProDismissCount(context)
+        )
+        if (inCooldown) {
+            pendingPostTripHazards = 0
+            return@LaunchedEffect
+        }
+
+        if (!isProEffective && pendingPostTripHazards >= 3) {
+            val tripHazards = pendingPostTripHazards
+            pendingPostTripHazards = 0
+            activeProTrigger = ProConversionTrigger.PostTripSummary(tripHazards)
+        } else if (!isProEffective) {
+            val totalAvoided = DriverPreferences.getAvoidedHazardsTotal(context)
+            val milestone = DriverPreferences.nextMilestoneReached(
+                totalAvoided = totalAvoided,
+                lastShownMilestone = DriverPreferences.getLastMilestoneShown(context)
+            )
+            if (milestone != null) {
+                DriverPreferences.markMilestonePromptShown(context, milestone)
+                activeProTrigger = ProConversionTrigger.HazardMilestone(milestone)
+            }
+        } else if (userProfile != null && userProfile.proExpiresAtMillis > 0L && !currentUserEmail.equals("redmond262@gmail.com", ignoreCase = true)) {
+            val remainingMs = userProfile.proExpiresAtMillis - System.currentTimeMillis()
+            if (remainingMs in 1L..DriverPreferences.ONE_DAY_MS &&
+                DriverPreferences.getTrial24hNotifiedExpiry(context) != userProfile.proExpiresAtMillis
+            ) {
+                DriverPreferences.markTrial24hNotified(context, userProfile.proExpiresAtMillis)
+                val hoursLeft = ((remainingMs / 3_600_000L).toInt()).coerceIn(1, 24)
+                activeProTrigger = ProConversionTrigger.TrialEnding24h(hoursLeft)
+            }
         }
     }
 
@@ -880,6 +943,13 @@ fun MapScreen(
                                         modifier = Modifier
                                             .clickable {
                                                 isRouteActive = false
+                                                if (tripStartAvoidedCount >= 0) {
+                                                    val avoidedInTrip = (DriverPreferences.getAvoidedHazardsTotal(context) - tripStartAvoidedCount).coerceAtLeast(0)
+                                                    tripStartAvoidedCount = -1
+                                                    if (avoidedInTrip >= 3) {
+                                                        pendingPostTripHazards = avoidedInTrip
+                                                    }
+                                                }
                                                 voiceCopilotManager.speak("Navegación detenida.", isWarning = false)
                                             }
                                             .testTag("stop_nav_pill_btn")
@@ -1026,6 +1096,7 @@ fun MapScreen(
                                     Button(
                                         onClick = {
                                             isRouteActive = true
+                                            tripStartAvoidedCount = DriverPreferences.getAvoidedHazardsTotal(context)
                                             fitRouteTrigger++
                                             val hazardsCount = if (routePolyline.size >= 2) {
                                                 activeAlerts.count {
@@ -1041,6 +1112,17 @@ fun MapScreen(
                                                 "Iniciando viaje hacia ${dest.title}. Distancia $formattedRemaining, tiempo estimado $durationText.$alertMsg",
                                                 isWarning = hazardsCount > 0
                                             )
+                                            if (preTripChecklistRemoteEnabled && !isGuestMode && DriverPreferences.shouldSpeakPreTripChecklist(context)) {
+                                                DriverPreferences.markPreTripChecklistSpoken(context)
+                                                val checklistSpeech = DriverPreferences.buildPreTripChecklistSpeech(
+                                                    DriverPreferences.getVehicleType(context)
+                                                )
+                                                voiceCopilotManager.speak(
+                                                    checklistSpeech,
+                                                    isWarning = false,
+                                                    queueIfSpeaking = true
+                                                )
+                                            }
                                         },
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = Color(0xFF10B981),
@@ -1115,7 +1197,7 @@ fun MapScreen(
                                 Text(
                                     text = when (alert.type) {
                                         "pozo" -> "🕳️"
-                                        "control_radar" -> "👮"
+                                        "control_radar" -> "📷"
                                         "trabajos_obra", "corte_obra" -> "🚧"
                                         "agua" -> "🌊"
                                         "neblina" -> "🌫️"
@@ -1296,6 +1378,11 @@ fun MapScreen(
                 currentLat = driverLocation.latitude,
                 currentLng = driverLocation.longitude,
                 isOwner = isUserOwner,
+                isGuestMode = isGuestMode,
+                onGuestActionBlocked = {
+                    selectedAlert = null
+                    showGuestUpgradeDialog = true
+                },
                 onDismiss = { selectedAlert = null },
                 onConfirmHazard = {
                     coroutineScope.launch {
@@ -1337,8 +1424,8 @@ fun MapScreen(
                 containerColor = Slate900,
                 titleContentColor = Amber400,
                 textContentColor = Color.White.copy(alpha = 0.85f),
-                title = { Text("Modo Invitado (Limitado)", fontWeight = FontWeight.Bold) },
-                text = { Text("Para ver y reportar pozos en tiempo real, usar alertas por voz, Baúl Vial o pedir auxilio SOS necesitás iniciar sesión con Google (incluye 7 días de prueba completa).") },
+                title = { Text("Modo Invitado (Solo Lectura)", fontWeight = FontWeight.Bold) },
+                text = { Text("Como invitado podés ver en el mapa los peligros y radares viales en tiempo real. Para reportar, votar alertas, usar el Copiloto por voz, Aventón, Baúl Vial o pedir SOS iniciá sesión gratis con Google (incluye 7 días PRO).") },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -1349,7 +1436,22 @@ fun MapScreen(
                     ) { Text("Iniciar con Google", fontWeight = FontWeight.Bold) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showGuestUpgradeDialog = false }) { Text("Seguir limitado", color = Color.White.copy(alpha = 0.7f)) }
+                    TextButton(onClick = { showGuestUpgradeDialog = false }) { Text("Seguir leyendo mapa", color = Color.White.copy(alpha = 0.7f)) }
+                }
+            )
+        }
+
+        activeProTrigger?.let { trigger ->
+            ProConversionDialog(
+                trigger = trigger,
+                billingConfig = billingConfig,
+                onRedeemOrInvite = {
+                    activeProTrigger = null
+                    onNavigateToProfile()
+                },
+                onDismissLater = {
+                    DriverPreferences.recordProPromptDismissal(context)
+                    activeProTrigger = null
                 }
             )
         }

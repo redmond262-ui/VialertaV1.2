@@ -518,6 +518,7 @@ class LocationRadarManager(
 
                 val speechText = "¡Atención! Se aproxima ${cluster.zoneName} a $roundedDist, $lengthText. Reduzca la velocidad."
                 try {
+                    DriverPreferences.incrementAvoidedHazardsTotal(context)
                     copilotManager?.speak(speechText, isWarning = true, queueIfSpeaking = true)
                 } catch (t: Throwable) {
                     Log.w("LocationRadar", "Cluster speech error: ${t.message}")
@@ -552,7 +553,7 @@ class LocationRadarManager(
                                 "¡Atención! Pozo en calzada a $distText."
                             }
                         }
-                        "control_radar" -> "¡Atención! Control vial o radar reportado a $distText."
+                        "control_radar" -> "¡Atención! Radar vial de velocidad reportado a $distText."
                         "ruta_detonada" -> "¡Precaución! Calzada deteriorada $laneContext a $distText."
                         "trabajos_obra", "corte_obra" -> "¡Atención! Trabajos en ruta y personal sobre calzada a $distText."
                         "agua" -> "¡Alerta! Agua acumulada sobre la calzada a $distText."
@@ -565,6 +566,7 @@ class LocationRadarManager(
                     }
 
                     try {
+                        DriverPreferences.incrementAvoidedHazardsTotal(context)
                         copilotManager?.speak(speechText, isWarning = true, queueIfSpeaking = true)
                     } catch (t: Throwable) {
                         Log.w("LocationRadar", "Stage 1 speech error: ${t.message}")
@@ -577,6 +579,7 @@ class LocationRadarManager(
             if (distMeters in 50.0..120.0) {
                 val lastStage2 = alertStage2Warned[alert.id] ?: 0L
                 if (now - lastStage2 > 90_000L) {
+                    val alreadyStage1Counted = alertStage1Warned.containsKey(alert.id)
                     alertStage2Warned[alert.id] = now
                     val immediateDist = if (distMeters < 80.0) "a 50 metros" else "a 100 metros"
 
@@ -588,7 +591,7 @@ class LocationRadarManager(
                                 "¡Atención! Pozo $immediateDist."
                             }
                         }
-                        "control_radar" -> "¡Control o radar $immediateDist! Controlá tu velocidad."
+                        "control_radar" -> "¡Radar vial $immediateDist! Controlá tu velocidad."
                         "ruta_detonada" -> "¡Calzada deteriorada $immediateDist!"
                         "trabajos_obra", "corte_obra" -> "¡Precaución! Zona de obras $immediateDist."
                         "agua" -> "¡Agua sobre calzada $immediateDist!"
@@ -597,6 +600,9 @@ class LocationRadarManager(
                     }
 
                     try {
+                        if (!alreadyStage1Counted) {
+                            DriverPreferences.incrementAvoidedHazardsTotal(context)
+                        }
                         copilotManager?.speak(imminentText, isWarning = true, queueIfSpeaking = true)
                     } catch (t: Throwable) {
                         Log.w("LocationRadar", "Stage 2 speech error: ${t.message}")

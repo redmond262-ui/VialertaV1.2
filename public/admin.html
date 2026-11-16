@@ -318,7 +318,8 @@
         <button class="tab-btn active" data-tab="map">🗺️ Mapa Nacional en Vivo</button>
         <button class="tab-btn" data-tab="alerts">⚠️ Alertas y Baches</button>
         <button class="tab-btn" data-tab="drivers">🚗 Conductores Online</button>
-        <button class="tab-btn" data-tab="users">👥 Usuarios y PRO / Freemium</button>
+        <button class="tab-btn" data-tab="users">👥 Usuarios, PRO y Beta</button>
+        <button class="tab-btn" data-tab="features">🚀 Módulos y Beta</button>
         <button class="tab-btn" data-tab="baul">🧳 Baúl Vial</button>
         <button class="tab-btn" data-tab="sos">🚨 SOS y Aventones</button>
       </nav>
@@ -396,7 +397,7 @@
       <!-- TAB: USERS -->
       <section id="tab-users" class="panel hidden">
         <div class="panel-header">
-          <h2 class="panel-title">Gestión de Usuarios, DNI y Licencias PRO / Freemium</h2>
+          <h2 class="panel-title">Gestión de Usuarios, Beta Testers y Licencias PRO</h2>
           <input type="text" id="filter-users" placeholder="Buscar por nombre, email o patente..." />
         </div>
         <div class="table-wrap">
@@ -405,13 +406,56 @@
               <tr>
                 <th>Conductor / Email</th>
                 <th>DNI / Vehículo</th>
-                <th>Plan Actual</th>
-                <th>Puntos Ruta</th>
-                <th>Control PRO / Verificación</th>
+                <th>Plan y Acceso</th>
+                <th>XP / Puntos Ruta</th>
+                <th>Control PRO / Beta / DNI</th>
               </tr>
             </thead>
             <tbody id="tbody-users"></tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- TAB: FEATURE FLAGS & BILLING -->
+      <section id="tab-features" class="panel hidden">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Control Remoto de Módulos (Oculto / Beta / Público)</h2>
+            <div style="font-size:12px;color:var(--muted);">Los cambios aplican en tiempo real a todos los celulares sin necesidad de actualizar el APK.</div>
+          </div>
+          <span class="pill">🔄 TIEMPO REAL</span>
+        </div>
+        <div class="table-wrap" style="margin-bottom:24px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Módulo</th>
+                <th>Descripción</th>
+                <th>Estado Actual</th>
+                <th>Cambiar Modo</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-features"></tbody>
+          </table>
+        </div>
+
+        <div style="border-top:1px solid var(--surface-2);padding-top:18px;">
+          <h3 style="margin:0 0 10px;font-size:15px;color:var(--green);">💳 Configuración Global de Cobro PRO (Mercado Pago)</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px;">
+            <div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Alias / CVU Mercado Pago</div>
+              <input type="text" id="input-mp-alias" placeholder="vialerta.oficial.mp" style="width:100%;" />
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Precio Mensual PRO (ARS)</div>
+              <input type="number" id="input-pro-price" placeholder="5000" style="width:100%;" />
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Link de Pago Opcional (MP)</div>
+              <input type="text" id="input-mp-link" placeholder="https://mpago.la/..." style="width:100%;" />
+            </div>
+          </div>
+          <button id="btn-save-billing" class="btn btn-green">💾 Guardar Configuración de Cobro</button>
         </div>
       </section>
 
@@ -499,6 +543,7 @@
       collection,
       doc,
       onSnapshot,
+      setDoc,
       updateDoc,
       deleteDoc,
       serverTimestamp
@@ -520,6 +565,15 @@
     const auth = getAuth(app);
     const db = getFirestore(app, DATABASE_ID);
 
+    const DEFAULT_FEATURES = {
+      aventonMode: "beta",
+      baulVialMode: "beta",
+      reclamosMode: "public",
+      proConversionMode: "beta",
+      referralsMode: "public",
+      preTripChecklistMode: "public"
+    };
+
     const state = {
       alerts: [],
       drivers: [],
@@ -527,6 +581,8 @@
       baul: [],
       sos: [],
       hitchhikes: [],
+      features: { ...DEFAULT_FEATURES },
+      billing: { mercadoPagoAlias: "vialerta.oficial.mp", proPriceArs: 5000, paymentLinkUrl: "" },
       unsubs: [],
       map: null,
       markerLayer: null
@@ -589,7 +645,7 @@
         document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         const target = btn.dataset.tab;
-        ["map", "alerts", "drivers", "users", "baul", "sos"].forEach((name) => {
+        ["map", "alerts", "drivers", "users", "features", "baul", "sos"].forEach((name) => {
           $(`tab-${name}`).classList.toggle("hidden", name !== target);
         });
         if (target === "map" && state.map) {
@@ -755,16 +811,52 @@
               </td>
               <td>
                 ${proActive ? `<span class="tag tag-amber">🌟 PRO (${daysLeft > 0 ? `${daysLeft}d` : "Ilimitado"})</span>` : `<span class="tag tag-slate">📱 Freemium</span>`}
+                ${u.isBetaTester ? `<br><span class="tag tag-blue" style="margin-top:4px;">🧪 BETA TESTER</span>` : ""}
               </td>
-              <td><strong>${u.pointsRuta || 0} pts</strong></td>
+              <td><strong>${u.xpTotal || u.pointsRuta || 0} XP</strong><br><span style="color:var(--muted);font-size:11px;">${u.pointsRuta || 0} pts canjeables</span></td>
               <td style="white-space:nowrap;">
+                <button class="btn ${u.isBetaTester ? "btn-blue" : "btn-ghost"} btn-sm" onclick="window.__adminAction('toggleBeta','${escapeHtml(u.id)}', ${!u.isBetaTester})">${u.isBetaTester ? "Quitar Beta" : "🧪 Activar Beta"}</button>
                 <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 30)">+30d PRO</button>
-                <button class="btn btn-ghost btn-sm" onclick="window.__adminAction('revokePro','${escapeHtml(u.id)}')">Pasar a Freemium</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.__adminAction('revokePro','${escapeHtml(u.id)}')">Freemium</button>
                 <button class="btn btn-blue btn-sm" onclick="window.__adminAction('toggleDni','${escapeHtml(u.id)}', ${!u.isDniVerified})">${u.isDniVerified ? "Quitar DNI" : "Verificar DNI"}</button>
               </td>
             </tr>
           `;
         }).join("");
+    }
+
+    const FEATURE_DEFS = [
+      { key: "aventonMode", name: "🚗 Aventón Seguro", desc: "Pestaña Aventón y marcadores de pasajeros esperando en ruta" },
+      { key: "baulVialMode", name: "🧳 Baúl Vial", desc: "Objetos encontrados/perdidos y reclamos verificados" },
+      { key: "reclamosMode", name: "📄 Reclamos Oficiales", desc: "Notas formales de reclamo por deterioro de ruta" },
+      { key: "proConversionMode", name: "⭐ Conversión PRO / Mercado Pago", desc: "Diálogo post-viaje e hitos para pasar a PRO" },
+      { key: "referralsMode", name: "🎁 Referidos (VIA-XXXXXX)", desc: "Tarjetas de invitación con +150 XP y +7 días PRO" },
+      { key: "preTripChecklistMode", name: "✅ Chequeo Pre-Viaje por Voz", desc: "Recordatorio breve de seguridad al iniciar navegación" }
+    ];
+
+    function renderFeatures() {
+      const tbody = $("tbody-features");
+      if (!tbody) return;
+      tbody.innerHTML = FEATURE_DEFS.map((f) => {
+        const val = state.features[f.key] || "beta";
+        const badge = val === "public"
+          ? `<span class="tag tag-green">Público</span>`
+          : val === "beta"
+            ? `<span class="tag tag-blue">🧪 Solo Beta / Admin</span>`
+            : `<span class="tag tag-slate">Oculto</span>`;
+        return `
+          <tr>
+            <td><strong>${f.name}</strong></td>
+            <td style="color:var(--muted);font-size:12px;">${f.desc}</td>
+            <td>${badge}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn ${val === "hidden" ? "btn-red" : "btn-ghost"} btn-sm" onclick="window.__setFeatureMode('${f.key}','hidden')">Oculto</button>
+              <button class="btn ${val === "beta" ? "btn-blue" : "btn-ghost"} btn-sm" onclick="window.__setFeatureMode('${f.key}','beta')">🧪 Beta</button>
+              <button class="btn ${val === "public" ? "btn-green" : "btn-ghost"} btn-sm" onclick="window.__setFeatureMode('${f.key}','public')">Público</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
     }
 
     function renderBaul() {
@@ -822,6 +914,7 @@
       renderAlerts();
       renderDrivers();
       renderUsers();
+      renderFeatures();
       renderBaul();
       renderSosAndHitchhikes();
       refreshMapMarkers();
@@ -859,6 +952,35 @@
       showToast(`🧹 Eliminados ${stale.length} registros de presencia inactivos`);
     });
 
+    $("btn-save-billing")?.addEventListener("click", async () => {
+      try {
+        const alias = $("input-mp-alias").value.trim() || "vialerta.oficial.mp";
+        const price = Math.max(0, Math.min(1000000, parseInt($("input-pro-price").value, 10) || 5000));
+        const link = $("input-mp-link").value.trim();
+        await setDoc(doc(db, "app_config", "billing"), {
+          mercadoPagoAlias: alias,
+          proPriceArs: price,
+          paymentLinkUrl: link,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        showToast("💳 Configuración de cobro PRO guardada");
+      } catch (e) {
+        showToast(`⚠️ Error guardando cobro: ${e.message}`);
+      }
+    });
+
+    window.__setFeatureMode = async (key, mode) => {
+      try {
+        const nextPayload = { ...DEFAULT_FEATURES, ...state.features, [key]: mode, updatedAt: serverTimestamp() };
+        delete nextPayload.id;
+        await setDoc(doc(db, "app_config", "features"), nextPayload, { merge: true });
+        showToast(`🚀 Módulo actualizado a ${mode.toUpperCase()}`);
+      } catch (e) {
+        console.error(e);
+        showToast(`⚠️ Error al guardar módulo: ${e.message}`);
+      }
+    };
+
     window.__adminAction = async (action, arg1, arg2) => {
       try {
         if (action === "resolveAlert") {
@@ -870,6 +992,9 @@
         } else if (action === "markBaulReturned") {
           await updateDoc(doc(db, "baul_vial", arg1), { status: "devuelto", updatedAt: serverTimestamp() });
           showToast("✅ Baúl Vial marcado como devuelto");
+        } else if (action === "toggleBeta") {
+          await updateDoc(doc(db, "users", arg1), { isBetaTester: Boolean(arg2), updatedAt: serverTimestamp() });
+          showToast(arg2 ? "🧪 Usuario habilitado como Beta Tester" : "Acceso Beta removido al usuario");
         } else if (action === "grantPro") {
           const expiry = Date.now() + Number(arg2 || 30) * 86400000;
           await updateDoc(doc(db, "users", arg1), { isProUser: true, proExpiresAtMillis: expiry, updatedAt: serverTimestamp() });
@@ -910,6 +1035,19 @@
           state.users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           renderAll();
         }, onErr("users")),
+        onSnapshot(doc(db, "app_config", "features"), (snap) => {
+          state.features = { ...DEFAULT_FEATURES, ...(snap.exists() ? snap.data() : {}) };
+          renderFeatures();
+        }, onErr("app_config/features")),
+        onSnapshot(doc(db, "app_config", "billing"), (snap) => {
+          if (snap.exists()) {
+            const b = snap.data();
+            state.billing = b;
+            if ($("input-mp-alias") && b.mercadoPagoAlias) $("input-mp-alias").value = b.mercadoPagoAlias;
+            if ($("input-pro-price") && typeof b.proPriceArs === "number") $("input-pro-price").value = b.proPriceArs;
+            if ($("input-mp-link")) $("input-mp-link").value = b.paymentLinkUrl || "";
+          }
+        }, onErr("app_config/billing")),
         onSnapshot(collection(db, "baul_vial"), (snap) => {
           state.baul = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           renderAll();

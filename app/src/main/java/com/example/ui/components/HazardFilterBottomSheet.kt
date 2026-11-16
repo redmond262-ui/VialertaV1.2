@@ -78,7 +78,7 @@ fun HazardFilterBottomSheet(
     val options = listOf(
         FilterOption("all", "Todos los peligros", totalAlertsCount, "⚠️"),
         FilterOption("pozo", "Baches y Pozos", categoryCounts["pozo"] ?: 0, "🕳️"),
-        FilterOption("control_radar", "Controles y Radares", categoryCounts["control_radar"] ?: 0, "👮"),
+        FilterOption("control_radar", "Radares Viales", categoryCounts["control_radar"] ?: 0, "📷"),
         FilterOption("ruta_detonada", "Ruta Detonada / Sin Asfalto", categoryCounts["ruta_detonada"] ?: 0, "💥"),
         FilterOption("neblina", "Neblina y Humo", categoryCounts["neblina"] ?: 0, "🌫️"),
         FilterOption("corte_obra", "Cortes y Obras", categoryCounts["corte_obra"] ?: 0, "🚧"),

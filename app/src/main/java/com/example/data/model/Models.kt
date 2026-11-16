@@ -80,10 +80,57 @@ data class UserProfile(
     val trustRole: String = "general",
     val isProUser: Boolean = false,
     val proExpiresAtMillis: Long = 0L,
+    val isBetaTester: Boolean = false,
+    val xpTotal: Int = 0,
     val pointsRuta: Int = 0,
     val dailyPointsEarned: Int = 0,
     val lastPointsDateString: String = "",
+    val referralCode: String = "",
+    val referredByUid: String = "",
+    val referredByCode: String = "",
+    val referralCount: Int = 0,
     @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+object FeatureMode {
+    const val HIDDEN = "hidden"
+    const val BETA = "beta"
+    const val PUBLIC = "public"
+}
+
+@IgnoreExtraProperties
+data class AppFeatureFlags(
+    @DocumentId val id: String = "features",
+    val aventonMode: String = FeatureMode.BETA,
+    val baulVialMode: String = FeatureMode.BETA,
+    val reclamosMode: String = FeatureMode.PUBLIC,
+    val proConversionMode: String = FeatureMode.BETA,
+    val referralsMode: String = FeatureMode.PUBLIC,
+    val preTripChecklistMode: String = FeatureMode.PUBLIC,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class ReferralRecord(
+    @DocumentId val id: String = "",
+    val refereeUid: String = "",
+    val refereeName: String = "",
+    val referrerUid: String = "",
+    val code: String = "",
+    val status: String = "pending", // pending | claimed
+    val rewardGrantedToReferee: Boolean = false,
+    val rewardGrantedToReferrer: Boolean = false,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class AppBillingConfig(
+    @DocumentId val id: String = "billing",
+    val mercadoPagoAlias: String = "vialerta.oficial.mp",
+    val proPriceArs: Int = 5000,
+    val paymentLinkUrl: String = "",
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
 

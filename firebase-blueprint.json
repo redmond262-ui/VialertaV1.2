@@ -14,10 +14,73 @@
         "defaultVehicle": { "type": "string", "description": "Vehicle model and color" },
         "defaultPlate": { "type": "string", "description": "Vehicle license plate" },
         "trustRole": { "type": "string", "enum": ["docente", "estudiante", "salud", "policia", "trabajador", "general"], "description": "Trusted role badge" },
+        "isBetaTester": { "type": "boolean", "description": "Whether user is authorized by Admin to preview Beta modules" },
+        "xpTotal": { "type": "integer", "description": "Cumulative experience points (never decreases on redemptions)" },
+        "pointsRuta": { "type": "integer", "description": "Redeemable Puntos Ruta balance" },
+        "referralCode": { "type": "string", "description": "Personal invitation code (e.g. VIA-ABC12)" },
+        "referredByUid": { "type": "string", "description": "UID of referring driver" },
+        "referredByCode": { "type": "string", "description": "Referral code redeemed" },
+        "referralCount": { "type": "integer", "description": "Count of successful referred drivers" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
       },
       "required": ["userId", "name", "createdAt"]
+    },
+    "ReferralCode": {
+      "title": "Public Referral Code Lookup",
+      "description": "Maps a VIA-XXXX referral code to the referrer UID without exposing PII",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Upper-case referral code matching document ID" },
+        "ownerUid": { "type": "string", "description": "Referrer auth UID" },
+        "ownerName": { "type": "string", "description": "Referrer display first name" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["code", "ownerUid", "createdAt"]
+    },
+    "ReferralRecord": {
+      "title": "Driver Referral Attribution",
+      "description": "Tracks one-time referral bonus per invited driver",
+      "type": "object",
+      "properties": {
+        "refereeUid": { "type": "string", "description": "Invited driver UID matching document ID" },
+        "refereeName": { "type": "string", "description": "Invited driver display name" },
+        "referrerUid": { "type": "string", "description": "Inviting driver UID" },
+        "code": { "type": "string", "description": "Redeemed referral code" },
+        "status": { "type": "string", "enum": ["pending", "claimed"], "description": "Reward claim status" },
+        "rewardGrantedToReferee": { "type": "boolean", "description": "Whether invited driver received bonus" },
+        "rewardGrantedToReferrer": { "type": "boolean", "description": "Whether referrer claimed bonus" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["refereeUid", "referrerUid", "code", "status", "createdAt"]
+    },
+    "BillingConfig": {
+      "title": "App Monetization Config",
+      "description": "Centralized Mercado Pago alias and PRO price configured by Admin",
+      "type": "object",
+      "properties": {
+        "mercadoPagoAlias": { "type": "string", "description": "Mercado Pago alias or CVU" },
+        "proPriceArs": { "type": "integer", "description": "Monthly PRO price in ARS" },
+        "paymentLinkUrl": { "type": "string", "description": "Optional checkout link" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["mercadoPagoAlias", "proPriceArs"]
+    },
+    "FeatureFlagsConfig": {
+      "title": "Remote Module Rollout Config",
+      "description": "Admin-controlled staged rollout flags (hidden | beta | public) per module",
+      "type": "object",
+      "properties": {
+        "aventonMode": { "type": "string", "enum": ["hidden", "beta", "public"] },
+        "baulVialMode": { "type": "string", "enum": ["hidden", "beta", "public"] },
+        "reclamosMode": { "type": "string", "enum": ["hidden", "beta", "public"] },
+        "proConversionMode": { "type": "string", "enum": ["hidden", "beta", "public"] },
+        "referralsMode": { "type": "string", "enum": ["hidden", "beta", "public"] },
+        "preTripChecklistMode": { "type": "string", "enum": ["hidden", "beta", "public"] },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["aventonMode", "baulVialMode"]
     },
     "RoadAlert": {
       "title": "Road Hazard Alert",
@@ -25,7 +88,7 @@
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Document ID" },
-        "type": { "type": "string", "enum": ["pozo", "ruta_detonada", "neblina", "corte_obra", "animales", "vehiculo_averiado"], "description": "Hazard type" },
+        "type": { "type": "string", "enum": ["pozo", "control_radar", "trabajos_obra", "agua", "ruta_detonada", "neblina", "corte_obra", "animales", "vehiculo_averiado", "alcantarilla", "semaforo"], "description": "Hazard type" },
         "depthCm": { "type": "integer", "description": "Pothole depth in centimeters" },
         "roadName": { "type": "string", "description": "Route or highway name" },
         "description": { "type": "string", "description": "Hazard description" },
@@ -119,6 +182,18 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles and credentials"
+    },
+    "/referral_codes/{code}": {
+      "schema": "ReferralCode",
+      "description": "Non-PII referral code directory for code lookup"
+    },
+    "/referrals/{refereeUid}": {
+      "schema": "ReferralRecord",
+      "description": "One-time referral reward attribution per invited user"
+    },
+    "/app_config/{configId}": {
+      "schema": "BillingConfig",
+      "description": "Global billing configuration editable only by Admin"
     },
     "/alerts/{alertId}": {
       "schema": "RoadAlert",

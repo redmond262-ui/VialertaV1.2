@@ -105,7 +105,7 @@ fun QuickReportDialog(
     val hazardOptions = remember {
         listOf(
             HazardOption("pozo", "Bache / Pozo", "🕳️", AlertRed500),
-            HazardOption("control_radar", "Control / Radar", "👮", Color(0xFF6366F1)),
+            HazardOption("control_radar", "Radar Vial", "📷", Color(0xFF6366F1)),
             HazardOption("trabajos_obra", "Trabajos Ruta", "🚧", Color(0xFFF97316)),
             HazardOption("corte_obra", "Corte / Desvío", "⛔", Color(0xFFEF4444)),
             HazardOption("ruta_detonada", "Asfalto Roto", "💥", Amber500),

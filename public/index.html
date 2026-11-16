@@ -3,11 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Descargar VíaAlerta APK - Versión Actualizada</title>
+    <title>VíaAlerta v2.1 — Radar Vial Comunitario</title>
     <style>
+        :root {
+            --bg: #020617;
+            --card: #0f172a;
+            --border: #1e293b;
+            --amber: #f59e0b;
+            --amber-dark: #d97706;
+            --green: #22c55e;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+        }
+        * { box-sizing: border-box; }
         body {
-            background-color: #020617;
-            color: #ffffff;
+            background: radial-gradient(circle at top, #0b1635 0%, var(--bg) 62%);
+            color: var(--text);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             display: flex;
             flex-direction: column;
@@ -15,111 +26,183 @@
             justify-content: center;
             min-height: 100vh;
             margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
-            text-align: center;
+            padding: 24px 16px;
         }
         .card {
-            background: #0f172a;
-            border: 1px solid #1e293b;
+            background: var(--card);
+            border: 1px solid var(--border);
             border-radius: 24px;
-            padding: 36px 28px;
-            max-width: 480px;
+            padding: 32px 24px;
+            max-width: 520px;
             width: 100%;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.65);
+            text-align: center;
         }
         .badge {
             display: inline-block;
-            background: rgba(34, 197, 94, 0.15);
-            color: #22c55e;
-            border: 1px solid #22c55e;
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: bold;
-            margin-bottom: 16px;
+            background: rgba(34, 197, 94, 0.14);
+            color: var(--green);
+            border: 1px solid rgba(34, 197, 94, 0.55);
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            letter-spacing: 0.3px;
         }
-        h1 { margin: 0 0 8px 0; font-size: 28px; font-weight: 800; color: #f8fafc; }
-        .subtitle { color: #f59e0b; font-weight: 600; font-size: 15px; margin-bottom: 20px; }
+        h1 {
+            margin: 0 0 8px 0;
+            font-size: 30px;
+            font-weight: 800;
+            color: var(--text);
+        }
+        .subtitle {
+            color: var(--amber);
+            font-weight: 600;
+            font-size: 15px;
+            line-height: 1.4;
+            margin-bottom: 22px;
+        }
         .btn-download {
             display: block;
-            background: linear-gradient(135deg, #f59e0b, #d97706);
+            background: linear-gradient(135deg, var(--amber), var(--amber-dark));
             color: #020617;
             font-weight: 800;
-            font-size: 18px;
-            padding: 16px 24px;
-            border-radius: 16px;
+            font-size: 17px;
+            padding: 15px 20px;
+            border-radius: 14px;
             text-decoration: none;
-            box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
-            transition: all 0.2s ease;
-            margin-bottom: 14px;
+            box-shadow: 0 8px 22px rgba(245, 158, 11, 0.32);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            margin-bottom: 12px;
+            min-height: 48px;
         }
         .btn-download:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(245, 158, 11, 0.5);
-        }
-        .btn-download:active {
-            transform: scale(0.98);
+            box-shadow: 0 10px 26px rgba(245, 158, 11, 0.45);
         }
         .btn-alt {
             display: block;
             background: #1e293b;
-            color: #94a3b8;
+            color: #e2e8f0;
             font-weight: 600;
             font-size: 14px;
-            padding: 12px 20px;
+            padding: 13px 18px;
             border-radius: 12px;
             text-decoration: none;
             border: 1px solid #334155;
-            transition: all 0.2s ease;
+            transition: background 0.15s ease;
+            margin-bottom: 10px;
+            min-height: 48px;
         }
-        .btn-alt:hover {
-            background: #334155;
-            color: #f8fafc;
+        .btn-alt:hover { background: #293548; }
+        .meta {
+            color: var(--muted);
+            font-size: 12px;
+            margin: 6px 0 20px 0;
         }
-        .info {
-            margin-top: 24px;
+        .panel {
             text-align: left;
             background: #020617;
-            border: 1px solid #1e293b;
+            border: 1px solid var(--border);
             border-radius: 14px;
-            padding: 18px;
+            padding: 16px 18px;
             font-size: 13px;
             color: #cbd5e1;
+            margin-top: 14px;
         }
-        .info h3 { margin: 0 0 10px 0; font-size: 14px; color: #f59e0b; }
-        .info ul { margin: 0; padding-left: 20px; }
-        .info li { margin-bottom: 8px; line-height: 1.4; }
-        .filesize { color: #64748b; font-size: 12px; margin-top: 8px; }
+        .panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: var(--amber);
+        }
+        .panel ul, .panel ol {
+            margin: 0;
+            padding-left: 18px;
+        }
+        .panel li {
+            margin-bottom: 7px;
+            line-height: 1.45;
+        }
+        .notice {
+            margin-top: 14px;
+            font-size: 12px;
+            color: #94a3b8;
+            line-height: 1.45;
+        }
+        #fallback-note {
+            display: none;
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 10px;
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.45);
+            color: #fde68a;
+            font-size: 13px;
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
-    <div class="card">
-        <div class="badge">✓ INSTALADOR COMPILADO Y VERIFICADO</div>
-        <h1>VíaAlerta v1.0.7</h1>
-        <div class="subtitle">Intro Vertical Inmersiva, Modo Invitado, Baúl Vial y Panel Web</div>
+    <main class="card">
+        <div class="badge">✓ LINK OFICIAL PERMANENTE • v2.1</div>
+        <h1>VíaAlerta</h1>
+        <p class="subtitle">Avisá. Cuidá. Conducí mejor. El copiloto vial comunitario pensado para las rutas argentinas.</p>
 
-        <a href="https://gofile.io/d/2zLlpKKp" target="_blank" class="btn-download">
-            📥 Descargar ViaAlerta-v1.0.7.apk (Gofile)
+        <a id="apk-direct-btn" href="/ViaAlerta.apk" class="btn-download" download="ViaAlerta.apk">
+            📲 Descargar VíaAlerta APK (Android)
         </a>
-        <a href="/ViaAlerta-v1.0.7.apk" class="btn-alt" download="ViaAlerta-v1.0.7.apk" style="margin-bottom:10px;">
-            Descarga Directa Local: ViaAlerta-v1.0.7.apk
-        </a>
-        <a href="/admin.html" class="btn-alt" style="border-color:#f59e0b;color:#fbbf24;">
+
+        <div id="fallback-note">
+            El paquete APK se actualiza automáticamente en cada compilación desde GitHub Releases (<code>ViaAlerta.apk</code>). Si acabás de compilar, verificá la última versión en tu pestaña <strong>Releases</strong> de GitHub o copiá el archivo <code>ViaAlerta.apk</code> al hosting.
+        </div>
+
+        <a href="/admin.html" class="btn-alt" style="border-color: rgba(245,158,11,0.55); color: #fbbf24;">
             🛡️ Abrir Panel Web Maestro (Admin)
         </a>
-        <div class="filesize">Archivo: ViaAlerta-v1.0.7.apk • Tamaño: 71 MB • Android 8.0+</div>
 
-        <div class="info">
-            <h3>Novedades en esta versión v1.0.7:</h3>
+        <div class="meta">Archivo oficial: ViaAlerta.apk • Android 7.0+ (API 24+) • Sin vencimiento de enlaces</div>
+
+        <section class="panel">
+            <h3>Novedades en VíaAlerta v2.1</h3>
             <ul>
-                <li><strong>Intro Vertical a Pantalla Completa:</strong> Presentación animada en formato vertical 9:16 sin distorsión ni franjas vacías, con botón discreto «Saltar intro».</li>
-                <li><strong>Acceso Primera Vez (Google 7 días vs Modo Invitado):</strong> Elección clara tras la intro para probar todas las funciones gratis con Google o entrar en modo invitado limitado al mapa básico.</li>
-                <li><strong>Nuevo Panel Web Maestro (`/admin.html`):</strong> Control en vivo desde la computadora con tus mismas credenciales Google.</li>
-                <li><strong>Módulo «Baúl Vial»:</strong> Objetos encontrados y extravíos con pregunta de seguridad para verificar titularidad.</li>
-                <li><strong>Trazado de Ruta Real + ETA Inteligente:</strong> Línea en mapa calle por calle y recálculo en viaje contemplando semáforos y paradas.</li>
+                <li><strong>Copiloto por Voz y Radar en Segundo Plano:</strong> Avisos de pozos críticos, calzada rota, obras, agua, neblina, animales y <strong>radares viales</strong> incluso con la pantalla apagada o usando otra app.</li>
+                <li><strong>Modo Invitado con Alertas en Vivo:</strong> Mirá peligros activos en el mapa al instante (solo lectura) sin necesidad de crear cuenta para probar la red.</li>
+                <li><strong>Sistema de Referidos (+7 días PRO):</strong> Compartí tu código <code>VIA-XXXXXX</code> y sumá <strong>+150 pts/XP y +7 días PRO gratis</strong> tanto para vos como para tu invitado.</li>
+                <li><strong>Chequeo Pre-Viaje Adaptable:</strong> Recordatorio breve por voz adaptado a Auto, Moto o Camión (desactivable en Perfil o por voz).</li>
+                <li><strong>Aventón Seguro, Baúl Vial y SOS:</strong> Viajes compartidos con QR, objetos perdidos verificados y pedido de auxilio rápido.</li>
             </ul>
-        </div>
-    </div>
+        </section>
+
+        <section class="panel">
+            <h3>Cómo instalar el APK en 3 pasos</h3>
+            <ol>
+                <li>Tocá <strong>«Descargar VíaAlerta APK»</strong> y aguardá a que finalice la descarga.</li>
+                <li>Abrí el archivo <code>ViaAlerta.apk</code> desde tus notificaciones o la carpeta <em>Descargas</em>; si Android te lo solicita, habilitá <em>«Permitir desde esta fuente»</em>.</li>
+                <li>Ingresá en <strong>Modo Invitado</strong> para ver el mapa o iniciá sesión con <strong>Google</strong> para recibir tus <strong>7 días PRO de bienvenida</strong>.</li>
+            </ol>
+        </section>
+
+        <p class="notice">
+            Nota: VíaAlerta prioriza la seguridad vial y <strong>no incluye reportes de controles policiales</strong>; únicamente peligros de calzada, clima, auxilio y radares viales de velocidad.
+        </p>
+    </main>
+
+    <script>
+        (function () {
+            const btn = document.getElementById('apk-direct-btn');
+            const note = document.getElementById('fallback-note');
+            if (!btn || !note) return;
+            fetch('/ViaAlerta.apk', { method: 'HEAD' })
+                .then(function (res) {
+                    if (!res.ok) {
+                        note.style.display = 'block';
+                    }
+                })
+                .catch(function () {
+                    note.style.display = 'block';
+                });
+        })();
+    </script>
 </body>
 </html>

@@ -4,6 +4,7 @@ import com.example.base.FirestoreEmulatorTestBase
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -106,14 +107,103 @@ class ViaAlertaRepositoryRuleTest : FirestoreEmulatorTestBase() {
   }
 
   @Test
-  fun observeActiveAlerts_unauthenticatedUser_returnsSafeEmptyListWithoutCrashing() = runBlocking {
-    auth.signOut()
+  fun observeActiveAlerts_unauthenticatedUser_receivesActiveAlertsReadOnlyAndBlocksWrites() = runBlocking {
+    signInTestUser(TEST_USER_EMAIL)
     val repository = RoadAlertRepository(firestore, null)
+    val createdId = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.createAlert(
+        type = "control_radar",
+        roadName = "Ruta 9 Km 85",
+        description = "Radar fijo de velocidad 110 km/h",
+        latitude = -34.15,
+        longitude = -59.05,
+        reporterName = "Conductor Invitador"
+      )
+    }.getOrThrow()
+
+    auth.signOut()
 
     val alerts = withTimeout(FLOW_TIMEOUT_MS) {
-      repository.observeActiveAlerts().first()
+      repository.observeActiveAlerts().first { list -> list.any { it.id == createdId } }
     }
-    assertTrue("Expected safe empty list fallback on unauthenticated access", alerts.isEmpty())
+    assertTrue("Guest should read active alerts in real time", alerts.any { it.id == createdId && it.type == "control_radar" })
+
+    val writeAttempt = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.createAlert(
+        type = "pozo",
+        roadName = "Ruta 9",
+        description = "Intento invitado",
+        latitude = -34.2,
+        longitude = -59.1,
+        reporterName = "Invitado"
+      )
+    }
+    assertTrue("Guest write must be rejected", writeAttempt.isFailure)
+  }
+
+  @Test
+  fun referrals_redeemAndClaimFlow_awardsPointsXpAndProDaysToBothUsers() = runBlocking {
+    val userRepo = UserRepository(firestore)
+
+    // 1. User A signs in and initializes profile + referral code
+    val uidA = signInTestUser(REFERRER_EMAIL)
+    val grantA = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.grantWelcomeProTrialIfEligible(uidA) }
+    assertTrue(grantA.isSuccess)
+    val profileA = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.getUserProfile(uidA) }
+    assertNotNull(profileA)
+    val codeA = profileA!!.referralCode
+    assertTrue(UserRepository.isValidReferralCodeFormat(codeA))
+
+    // 2. User B signs in, initializes profile, and redeems User A's code
+    val uidB = signInTestUser(REFEREE_EMAIL)
+    withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.grantWelcomeProTrialIfEligible(uidB) }
+    val redeemRes = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.redeemReferralCode(codeA) }
+    assertTrue("Referee redemption failed: ${redeemRes.exceptionOrNull()}", redeemRes.isSuccess)
+
+    val profileB = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.getUserProfile(uidB) }
+    assertNotNull(profileB)
+    assertEquals(UserRepository.REFERRAL_BONUS_POINTS, profileB!!.pointsRuta)
+    assertEquals(UserRepository.REFERRAL_BONUS_POINTS, profileB.xpTotal)
+    assertEquals(codeA, profileB.referredByCode)
+
+    // 3. Re-redeeming must fail
+    val secondRedeem = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.redeemReferralCode(codeA) }
+    assertTrue(secondRedeem.isFailure)
+
+    // 4. User A logs back in and claims pending referral reward
+    signInTestUser(REFERRER_EMAIL)
+    val claimRes = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.claimPendingReferralRewards(uidA) }
+    assertTrue("Claim failed: ${claimRes.exceptionOrNull()}", claimRes.isSuccess)
+    assertEquals(1, claimRes.getOrThrow())
+
+    val updatedA = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.getUserProfile(uidA) }
+    assertNotNull(updatedA)
+    assertEquals(UserRepository.REFERRAL_BONUS_POINTS, updatedA!!.pointsRuta)
+    assertEquals(UserRepository.REFERRAL_BONUS_POINTS, updatedA.xpTotal)
+    assertEquals(1, updatedA.referralCount)
+  }
+
+  @Test
+  fun billingConfig_nonAdminCannotOverwriteButCanReadDefaultOrStoredConfig() = runBlocking {
+    signInTestUser(TEST_USER_EMAIL)
+    val billingRepo = BillingConfigRepository(firestore)
+
+    val saveAttempt = withTimeout(DEFAULT_TIMEOUT_MS) {
+      billingRepo.saveBillingConfig(
+        mercadoPagoAlias = "hacker.alias.mp",
+        proPriceArs = 1,
+        paymentLinkUrl = "https://example.com"
+      )
+    }
+    assertTrue("Non-admin write to app_config/billing must fail", saveAttempt.isFailure)
+    val firestoreErr = saveAttempt.exceptionOrNull()?.unwrapFirestoreException()
+    assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, firestoreErr?.code)
+
+    val currentConfig = withTimeout(FLOW_TIMEOUT_MS) {
+      billingRepo.observeBillingConfig().first()
+    }
+    assertEquals("vialerta.oficial.mp", currentConfig.mercadoPagoAlias)
+    assertEquals(5000, currentConfig.proPriceArs)
   }
 
   @Test
@@ -163,9 +253,56 @@ class ViaAlertaRepositoryRuleTest : FirestoreEmulatorTestBase() {
     assertTrue(approvedRes.isSuccess)
   }
 
+  @Test
+  fun featureFlags_nonAdminCannotWriteAndReadsDefaultBetaModes() = runBlocking {
+    signInTestUser(TEST_USER_EMAIL)
+    val flagsRepo = FeatureFlagsRepository(firestore, null)
+
+    val saveAttempt = withTimeout(DEFAULT_TIMEOUT_MS) {
+      flagsRepo.saveFeatureFlags(
+        com.example.data.model.AppFeatureFlags(
+          aventonMode = com.example.data.model.FeatureMode.PUBLIC,
+          baulVialMode = com.example.data.model.FeatureMode.PUBLIC
+        )
+      )
+    }
+    assertTrue("Non-admin write to app_config/features must fail", saveAttempt.isFailure)
+    val firestoreErr = saveAttempt.exceptionOrNull()?.unwrapFirestoreException()
+    assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, firestoreErr?.code)
+
+    val currentFlags = withTimeout(FLOW_TIMEOUT_MS) {
+      flagsRepo.observeFeatureFlags().first()
+    }
+    assertEquals(com.example.data.model.FeatureMode.BETA, currentFlags.aventonMode)
+    assertEquals(com.example.data.model.FeatureMode.BETA, currentFlags.baulVialMode)
+  }
+
+  @Test
+  fun userBetaTester_nonAdminCannotSelfPromoteViaFirestoreUpdate() = runBlocking {
+    val uid = signInTestUser(TEST_USER_EMAIL)
+    val userRepo = UserRepository(firestore)
+    val grantRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      userRepo.grantWelcomeProTrialIfEligible(uid)
+    }
+    assertTrue("Initial profile creation should succeed: ${grantRes.exceptionOrNull()}", grantRes.isSuccess)
+
+    try {
+      withTimeout(DEFAULT_TIMEOUT_MS) {
+        firestore.collection("users").document(uid).update("isBetaTester", true).await()
+      }
+      fail("Non-admin user must NOT be able to self-promote isBetaTester = true")
+    } catch (e: Exception) {
+      val firestoreErr = e.unwrapFirestoreException()
+      assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, firestoreErr?.code)
+    }
+  }
+
   private companion object {
     const val TEST_USER_EMAIL = "viaalerta_tester@example.com"
+    const val REFERRER_EMAIL = "viaalerta_referrer@example.com"
+    const val REFEREE_EMAIL = "viaalerta_referee@example.com"
     const val DEFAULT_TIMEOUT_MS = 6000L
     const val FLOW_TIMEOUT_MS = 5000L
   }
 }
+
