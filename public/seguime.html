@@ -24,7 +24,9 @@
     html, body {
       margin: 0;
       padding: 0;
-      height: 100%;
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
       background: var(--bg);
       color: var(--text);
       font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -41,6 +43,7 @@
       justify-content: space-between;
       gap: 10px;
       z-index: 30;
+      flex-shrink: 0;
     }
     .brand {
       display: flex;
@@ -99,17 +102,25 @@
       line-height: 1.35;
       color: #bae6fd;
       z-index: 25;
+      flex-shrink: 0;
     }
     #map-container {
       position: relative;
-      flex: 1;
-      min-height: 220px;
+      flex: 1 1 auto;
+      min-height: 0;
       width: 100%;
+      background: #0b1220;
     }
     #seguime-map {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
-      background: #020617;
+      background: #0b1220;
+      z-index: 1;
+    }
+    .leaflet-tile-pane.osm-dark {
+      filter: invert(92%) hue-rotate(180deg) brightness(96%) contrast(90%) saturate(85%);
     }
     .center-msg {
       position: absolute;
@@ -134,6 +145,7 @@
       border-top: 1px solid var(--border);
       padding: 12px 14px 14px;
       z-index: 30;
+      flex-shrink: 0;
     }
     .telemetry-grid {
       display: grid;
@@ -167,12 +179,12 @@
     }
     .btn {
       flex: 1;
-      min-width: 140px;
+      min-width: 135px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
-      padding: 11px 14px;
+      padding: 11px 12px;
       border-radius: 12px;
       font-weight: 800;
       font-size: 13px;
@@ -182,6 +194,14 @@
     }
     .btn-amber { background: var(--amber); color: #020617; }
     .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .btn-app {
+      flex-basis: 100%;
+      background: rgba(56, 189, 248, 0.14);
+      color: #7dd3fc;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      font-size: 12px;
+      padding: 9px 12px;
+    }
     .hidden { display: none !important; }
     .driver-pulse {
       width: 22px;
@@ -209,7 +229,7 @@
   </header>
 
   <div class="coverage-banner">
-    📡 <strong>Cobertura y Privacidad:</strong> En zonas sin señal 4G/5G conserva el último punto GPS enviado y actualiza al volver cobertura. Este enlace <strong>caduca automáticamente al llegar o cancelar</strong> el viaje.
+    📡 <strong>Cobertura y Privacidad:</strong> Mapa integrado sin API ni Google Maps. En zonas sin 4G/5G conserva el último punto GPS y actualiza al volver cobertura. Este enlace <strong>caduca automáticamente al llegar o cancelar</strong>.
   </div>
 
   <div id="map-container">
@@ -251,10 +271,9 @@
     </div>
 
     <div class="actions-row">
-      <a id="btn-google-maps" href="#" target="_blank" rel="noopener" class="btn btn-amber">
-        🗺️ Abrir última posición en Maps
-      </a>
-      <button id="btn-recenter" class="btn btn-ghost">🎯 Centrar en vehículo</button>
+      <button id="btn-recenter" type="button" class="btn btn-amber">🎯 Ubicar vehículo en el mapa</button>
+      <button id="btn-fit-trail" type="button" class="btn btn-ghost">🛣️ Ver recorrido</button>
+      <a id="btn-open-app" href="#" class="btn btn-app hidden">📲 Abrir seguimiento dentro de la app VíaAlerta</a>
     </div>
   </section>
 
@@ -284,10 +303,75 @@
     const sessionId = (params.get("s") || "").trim();
 
     let map = null;
+    let activeTileLayer = null;
+    let tileProviderIndex = 0;
+    let tileErrorCount = 0;
     let driverMarker = null;
     let trailLine = null;
     let latestLatLng = null;
+    let latestTrailCoords = [];
     let latestData = null;
+
+    // Free, zero-API-key map tile providers with automatic failover
+    const TILE_PROVIDERS = [
+      {
+        name: "OpenStreetMap",
+        url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        darkFilter: true,
+        options: { maxZoom: 19, attribution: "&copy; OpenStreetMap" }
+      },
+      {
+        name: "ArcGIS World Street",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        darkFilter: true,
+        options: { maxZoom: 19, attribution: "&copy; Esri &amp; OpenStreetMap" }
+      },
+      {
+        name: "CARTO Dark",
+        url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        darkFilter: false,
+        options: { maxZoom: 19, subdomains: "abcd", attribution: "&copy; OpenStreetMap &amp; CARTO" }
+      }
+    ];
+
+    function ensureLeafletLoaded() {
+      if (typeof window.L !== "undefined") return Promise.resolve(true);
+      return new Promise((resolve) => {
+        const css = document.createElement("link");
+        css.rel = "stylesheet";
+        css.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(css);
+
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+        script.onload = () => resolve(typeof window.L !== "undefined");
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
+      });
+    }
+
+    function applyTileProvider(index) {
+      if (!map || typeof window.L === "undefined") return;
+      const provider = TILE_PROVIDERS[index];
+      if (!provider) return;
+      tileProviderIndex = index;
+      tileErrorCount = 0;
+      if (activeTileLayer) {
+        try { map.removeLayer(activeTileLayer); } catch (_) {}
+      }
+      const tilePane = map.getPane("tilePane");
+      if (tilePane) {
+        tilePane.classList.toggle("osm-dark", Boolean(provider.darkFilter));
+      }
+      activeTileLayer = window.L.tileLayer(provider.url, provider.options);
+      activeTileLayer.on("tileerror", () => {
+        tileErrorCount += 1;
+        if (tileErrorCount >= 4 && tileProviderIndex + 1 < TILE_PROVIDERS.length) {
+          applyTileProvider(tileProviderIndex + 1);
+        }
+      });
+      activeTileLayer.addTo(map);
+    }
 
     function headingToLabel(deg) {
       if (typeof deg !== "number" || deg < 0) return "Estacionado";
@@ -310,14 +394,19 @@
       return `hace ${Math.floor(mins / 60)}h`;
     }
 
-    function initMap(lat, lng) {
-      if (map) return;
-      map = L.map("seguime-map", { zoomControl: true }).setView([lat, lng], 14);
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap &copy; CARTO"
-      }).addTo(map);
+    async function initMap(lat, lng) {
+      if (map) return true;
+      const ready = await ensureLeafletLoaded();
+      if (!ready || typeof window.L === "undefined") return false;
+      map = window.L.map("seguime-map", { zoomControl: true }).setView([lat, lng], 15);
+      applyTileProvider(0);
+      setTimeout(() => { try { map?.invalidateSize(true); } catch (_) {} }, 150);
+      return true;
     }
+
+    window.addEventListener("resize", () => {
+      try { map?.invalidateSize(true); } catch (_) {}
+    });
 
     function showOverlay(emoji, title, desc) {
       $("overlay-emoji").textContent = emoji;
@@ -328,10 +417,13 @@
 
     function hideOverlay() {
       $("overlay-state").classList.add("hidden");
+      try { map?.invalidateSize(true); } catch (_) {}
+      setTimeout(() => { try { map?.invalidateSize(true); } catch (_) {} }, 180);
     }
 
     function wipePrivacyState() {
       latestLatLng = null;
+      latestTrailCoords = [];
       if (driverMarker && map) {
         map.removeLayer(driverMarker);
       }
@@ -345,18 +437,16 @@
       $("metric-updated").textContent = "--";
       $("vehicle-sub").textContent = "Enlace temporal finalizado";
       $("dest-pill").textContent = "🔒 Ubicación eliminada";
-      const mapsBtn = $("btn-google-maps");
-      if (mapsBtn) {
-        mapsBtn.href = "#";
-        mapsBtn.classList.add("hidden");
-      }
-      const recenterBtn = $("btn-recenter");
-      if (recenterBtn) {
-        recenterBtn.classList.add("hidden");
+      $("btn-recenter")?.classList.add("hidden");
+      $("btn-fit-trail")?.classList.add("hidden");
+      const openAppBtn = $("btn-open-app");
+      if (openAppBtn) {
+        openAppBtn.href = "#";
+        openAppBtn.classList.add("hidden");
       }
     }
 
-    function renderSession(data) {
+    async function renderSession(data) {
       latestData = data;
       const now = Date.now();
       const updatedMillis = data.updatedAt?.toMillis ? data.updatedAt.toMillis() : (data.createdAt?.toMillis ? data.createdAt.toMillis() : now);
@@ -394,10 +484,13 @@
         return;
       }
 
-      const mapsBtn = $("btn-google-maps");
-      if (mapsBtn) mapsBtn.classList.remove("hidden");
-      const recenterBtn = $("btn-recenter");
-      if (recenterBtn) recenterBtn.classList.remove("hidden");
+      $("btn-recenter")?.classList.remove("hidden");
+      $("btn-fit-trail")?.classList.remove("hidden");
+      const openAppBtn = $("btn-open-app");
+      if (openAppBtn) {
+        openAppBtn.href = `viaalerta://seguime?s=${encodeURIComponent(sessionId)}`;
+        openAppBtn.classList.remove("hidden");
+      }
 
       if (ageSec > 90) {
         badge.className = "status-pill status-stale";
@@ -419,46 +512,51 @@
 
       if (typeof data.latitude === "number" && typeof data.longitude === "number" && (data.latitude !== 0 || data.longitude !== 0)) {
         latestLatLng = [data.latitude, data.longitude];
-        initMap(data.latitude, data.longitude);
-        $("btn-google-maps").href = `https://maps.google.com/?q=${data.latitude},${data.longitude}`;
+        try {
+          const mapReady = await initMap(data.latitude, data.longitude);
+          if (mapReady && map && typeof window.L !== "undefined") {
+            const trailCoords = Array.isArray(data.recentPoints)
+              ? data.recentPoints
+                  .filter((p) => p && typeof p.lat === "number" && typeof p.lng === "number" && (p.lat !== 0 || p.lng !== 0))
+                  .map((p) => [p.lat, p.lng])
+              : [];
+            if (trailCoords.length === 0 || trailCoords[trailCoords.length - 1][0] !== data.latitude) {
+              trailCoords.push(latestLatLng);
+            }
+            latestTrailCoords = trailCoords;
 
-        const trailCoords = Array.isArray(data.recentPoints)
-          ? data.recentPoints
-              .filter((p) => p && typeof p.lat === "number" && typeof p.lng === "number" && (p.lat !== 0 || p.lng !== 0))
-              .map((p) => [p.lat, p.lng])
-          : [];
-        if (trailCoords.length === 0 || trailCoords[trailCoords.length - 1][0] !== data.latitude) {
-          trailCoords.push(latestLatLng);
+            if (trailLine) {
+              trailLine.setLatLngs(trailCoords);
+            } else if (trailCoords.length >= 2) {
+              trailLine = window.L.polyline(trailCoords, {
+                color: "#38bdf8",
+                weight: 4,
+                opacity: 0.9,
+                dashArray: "6 6"
+              }).addTo(map);
+            }
+
+            const pulseIcon = window.L.divIcon({
+              className: "",
+              html: '<div class="driver-pulse"></div>',
+              iconSize: [22, 22],
+              iconAnchor: [11, 11]
+            });
+
+            if (driverMarker) {
+              driverMarker.setLatLng(latestLatLng);
+            } else {
+              driverMarker = window.L.marker(latestLatLng, { icon: pulseIcon }).addTo(map);
+            }
+            const esc = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
+            driverMarker.bindPopup(
+              `<strong>${esc(data.driverName || "Conductor")}</strong><br>${spd} km/h • ${formatRelative(updatedMillis)}`
+            );
+            map.panTo(latestLatLng, { animate: true });
+          }
+        } catch (mapErr) {
+          console.warn("Error renderizando mapa Seguime:", mapErr);
         }
-
-        if (trailLine) {
-          trailLine.setLatLngs(trailCoords);
-        } else if (trailCoords.length >= 2) {
-          trailLine = L.polyline(trailCoords, {
-            color: "#38bdf8",
-            weight: 4,
-            opacity: 0.85,
-            dashArray: "6 6"
-          }).addTo(map);
-        }
-
-        const pulseIcon = L.divIcon({
-          className: "",
-          html: '<div class="driver-pulse"></div>',
-          iconSize: [22, 22],
-          iconAnchor: [11, 11]
-        });
-
-        if (driverMarker) {
-          driverMarker.setLatLng(latestLatLng);
-        } else {
-          driverMarker = L.marker(latestLatLng, { icon: pulseIcon }).addTo(map);
-        }
-        const esc = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
-        driverMarker.bindPopup(
-          `<strong>${esc(data.driverName || "Conductor")}</strong><br>${spd} km/h • ${formatRelative(updatedMillis)}`
-        );
-        map.panTo(latestLatLng, { animate: true });
       }
 
       hideOverlay();
@@ -466,6 +564,22 @@
 
     $("btn-recenter").addEventListener("click", () => {
       if (map && latestLatLng) {
+        map.invalidateSize(true);
+        map.setView(latestLatLng, 16, { animate: true });
+        try { driverMarker?.openPopup(); } catch (_) {}
+      }
+    });
+
+    $("btn-fit-trail").addEventListener("click", () => {
+      if (!map) return;
+      map.invalidateSize(true);
+      if (latestTrailCoords.length >= 2 && typeof window.L !== "undefined") {
+        try {
+          map.fitBounds(window.L.latLngBounds(latestTrailCoords), { padding: [36, 36], maxZoom: 16 });
+          return;
+        } catch (_) {}
+      }
+      if (latestLatLng) {
         map.setView(latestLatLng, 15, { animate: true });
       }
     });

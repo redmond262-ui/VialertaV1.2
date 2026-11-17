@@ -458,6 +458,18 @@ class DriverLogicUnitTest {
         assertTrue(msg.contains(url))
         assertTrue(msg.contains("caduca automáticamente"))
         assertTrue(msg.contains("sin señal 4G/5G"))
+
+        assertEquals(
+            token1,
+            SeguimeRepository.parseSessionIdFromText("viaalerta://seguime?s=$token1")
+        )
+        assertEquals(
+            token1,
+            SeguimeRepository.parseSessionIdFromText("https://gen-lang-client-0699193083.web.app/seguime.html?s=$token1")
+        )
+        assertEquals(token1, SeguimeRepository.parseSessionIdFromText(token1))
+        assertEquals(null, SeguimeRepository.parseSessionIdFromText("viaalerta://seguime?s=corto"))
+        assertEquals(null, SeguimeRepository.parseSessionIdFromText(""))
     }
 }
 

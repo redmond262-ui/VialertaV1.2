@@ -62,6 +62,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.data.model.HitchhikeRequest
 import com.example.data.model.RoadAlert
+import com.example.data.model.SeguimeSession
 import com.example.data.model.SosRequest
 import com.example.ui.theme.AlertRed500
 import com.example.ui.theme.Amber400
@@ -101,6 +102,8 @@ fun RealRoadMapView(
     isRouteActive: Boolean = false,
     isNightDimMode: Boolean = false,
     fitRouteTrigger: Int = 0,
+    followedSession: SeguimeSession? = null,
+    followedFocusTrigger: Int = 0,
     onMapInteractionChange: (Boolean) -> Unit = {},
     onAlertSelected: (RoadAlert) -> Unit = {},
     onSosSelected: (SosRequest) -> Unit = {},
@@ -332,6 +335,20 @@ fun RealRoadMapView(
         }
     }
 
+    // Focus camera on followed Seguime vehicle inside our native map
+    LaunchedEffect(followedSession?.id, followedFocusTrigger) {
+        val followed = followedSession ?: return@LaunchedEffect
+        val map = mapInstance ?: return@LaunchedEffect
+        if (!isStyleLoaded) return@LaunchedEffect
+        if (followed.latitude != 0.0 || followed.longitude != 0.0) {
+            userTouchTimestamp = System.currentTimeMillis() + 12000L
+            map.animateCamera(
+                CameraUpdateFactory.newLatLngZoom(LatLng(followed.latitude, followed.longitude), 15.5),
+                900
+            )
+        }
+    }
+
     // Update driver car position, traced route polylines and markers ONLY when style is loaded
     LaunchedEffect(
         mapInstance,
@@ -344,7 +361,8 @@ fun RealRoadMapView(
         routePolyline,
         alternativeRoutes,
         selectedRouteIndex,
-        isRouteActive
+        isRouteActive,
+        followedSession
     ) {
         val map = mapInstance ?: return@LaunchedEffect
         if (!isStyleLoaded) return@LaunchedEffect
@@ -462,6 +480,37 @@ fun RealRoadMapView(
                         .title(targetFocusTitle ?: "Destino Seleccionado")
                         .snippet(if (isRouteActive) "Viaje en curso • Recalculando ETA" else "Tocá Trazar Ruta para iniciar")
                         .icon(destIcon)
+                )
+            }
+
+            // 6. Followed Seguime Vehicle (trail + live pin inside VíaAlerta map)
+            if (followedSession != null && followedSession.status == "active" &&
+                (followedSession.latitude != 0.0 || followedSession.longitude != 0.0)
+            ) {
+                val trail = followedSession.recentPoints
+                    .filter { it.lat != 0.0 || it.lng != 0.0 }
+                    .map { LatLng(it.lat, it.lng) }
+                    .toMutableList()
+                val livePos = LatLng(followedSession.latitude, followedSession.longitude)
+                if (trail.isEmpty() || trail.last().latitude != livePos.latitude || trail.last().longitude != livePos.longitude) {
+                    trail.add(livePos)
+                }
+                if (trail.size >= 2) {
+                    map.addPolyline(
+                        PolylineOptions()
+                            .addAll(trail)
+                            .color(android.graphics.Color.parseColor("#38BDF8"))
+                            .width(5.5f)
+                    )
+                }
+                val followedBitmap = createFollowedDriverBitmap()
+                val followedIcon = iconFactory.fromBitmap(followedBitmap)
+                map.addMarker(
+                    MarkerOptions()
+                        .position(livePos)
+                        .title("📡 ${followedSession.driverName.ifBlank { "Conductor Seguime" }}")
+                        .snippet("${followedSession.speedKmH.roundToInt()} km/h" + (if (followedSession.destinationTitle.isNotBlank()) " • Hacia ${followedSession.destinationTitle}" else ""))
+                        .icon(followedIcon)
                 )
             }
         } catch (t: Throwable) {
@@ -1000,6 +1049,41 @@ private fun createDestinationMarkerBitmap(): Bitmap {
         isFakeBoldText = true
     }
     canvas.drawText("📍", size / 2f, size / 2f + 5f, textPaint)
+
+    return bitmap
+}
+
+private fun createFollowedDriverBitmap(): Bitmap {
+    val size = 68
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.parseColor("#5522C55E")
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(size / 2f, size / 2f, 31f, haloPaint)
+
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.parseColor("#22C55E")
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(size / 2f, size / 2f, 20f, fillPaint)
+
+    val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f
+    }
+    canvas.drawCircle(size / 2f, size / 2f, 20f, strokePaint)
+
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.BLACK
+        textSize = 18f
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
+    }
+    canvas.drawText("🚗", size / 2f, size / 2f + 6f, textPaint)
 
     return bitmap
 }

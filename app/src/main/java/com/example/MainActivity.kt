@@ -103,9 +103,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val incomingSeguimeIdState = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        SeguimeRepository.parseSessionIdFromText(intent?.dataString)?.let {
+            incomingSeguimeIdState.value = it
+        }
 
         try {
             val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -161,9 +166,19 @@ class MainActivity : ComponentActivity() {
             ViaAlertaTheme {
                 AppContent(
                     voiceCopilotManager = voiceCopilotManager,
-                    locationRadarManager = locationRadarManager
+                    locationRadarManager = locationRadarManager,
+                    incomingSeguimeSessionId = incomingSeguimeIdState.value,
+                    onConsumeIncomingSeguime = { incomingSeguimeIdState.value = null }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        SeguimeRepository.parseSessionIdFromText(intent.dataString)?.let {
+            incomingSeguimeIdState.value = it
         }
     }
 
@@ -248,7 +263,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppContent(
     voiceCopilotManager: VoiceCopilotManager,
-    locationRadarManager: LocationRadarManager
+    locationRadarManager: LocationRadarManager,
+    incomingSeguimeSessionId: String? = null,
+    onConsumeIncomingSeguime: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -257,6 +274,13 @@ fun AppContent(
     var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
     var isSplashVisible by remember { mutableStateOf(true) }
     var isGuestMode by remember { mutableStateOf(false) }
+
+    LaunchedEffect(incomingSeguimeSessionId, currentUser) {
+        if (!incomingSeguimeSessionId.isNullOrBlank() && currentUser == null) {
+            isGuestMode = true
+            isSplashVisible = false
+        }
+    }
 
     DisposableEffect(Unit) {
         val listener = FirebaseAuth.AuthStateListener { auth ->
@@ -300,6 +324,8 @@ fun AppContent(
                 isGuestMode = activeUser == null,
                 voiceCopilotManager = voiceCopilotManager,
                 locationRadarManager = locationRadarManager,
+                incomingSeguimeSessionId = incomingSeguimeSessionId,
+                onConsumeIncomingSeguime = onConsumeIncomingSeguime,
                 onRequestGoogleLogin = { isGuestMode = false },
                 onSignOutClicked = {
                     coroutineScope.launch {
@@ -330,6 +356,8 @@ fun MainScaffold(
     isGuestMode: Boolean = false,
     voiceCopilotManager: VoiceCopilotManager,
     locationRadarManager: LocationRadarManager,
+    incomingSeguimeSessionId: String? = null,
+    onConsumeIncomingSeguime: () -> Unit = {},
     onRequestGoogleLogin: () -> Unit = {},
     onSignOutClicked: () -> Unit
 ) {
@@ -534,6 +562,15 @@ fun MainScaffold(
         mutableStateOf(!isGuestMode && !com.example.ui.components.isOnboardingCompleted(context))
     }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var activeFollowedSeguimeId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(incomingSeguimeSessionId) {
+        if (!incomingSeguimeSessionId.isNullOrBlank()) {
+            activeFollowedSeguimeId = incomingSeguimeSessionId
+            selectedTabIndex = 0
+            onConsumeIncomingSeguime()
+        }
+    }
     var isActiveTripNavigation by remember { mutableStateOf(false) }
 
     // Fallback Anti-Fatigue monitor when Foreground Service is not active
@@ -792,6 +829,8 @@ fun MainScaffold(
                         proConversionEnabled = showProConversionModule,
                         preTripChecklistRemoteEnabled = showPreTripModule,
                         isGuestMode = isGuestMode,
+                        followedSeguimeSessionId = activeFollowedSeguimeId,
+                        onClearFollowedSeguime = { activeFollowedSeguimeId = null },
                         onRequestGoogleLogin = onRequestGoogleLogin,
                         onNavigateToCopilot = {
                             triggerVoiceWithPermission(stayOnCurrentTab = false)

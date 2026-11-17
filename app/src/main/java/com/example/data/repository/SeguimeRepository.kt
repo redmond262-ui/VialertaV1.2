@@ -1,9 +1,11 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.example.data.OperationType
 import com.example.data.handleFirestoreError
 import com.example.data.model.SeguimePoint
+import com.example.data.model.SeguimeSession
 import com.example.util.LocationRadarManager
 import com.example.util.OfflineAlertQueue
 import com.example.util.getSafeFirestoreInstance
@@ -12,12 +14,23 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
 import kotlin.math.roundToInt
+
+sealed interface SeguimeFollowState {
+    data object Loading : SeguimeFollowState
+    data class Active(val session: SeguimeSession) : SeguimeFollowState
+    data class Ended(val status: String, val driverName: String) : SeguimeFollowState
+    data object NotFound : SeguimeFollowState
+    data class Error(val message: String) : SeguimeFollowState
+}
 
 class SeguimeRepository(
     private val db: FirebaseFirestore,
@@ -376,15 +389,56 @@ class SeguimeRepository(
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
-            withTimeout(4500L) {
+            withTimeout(7500L) {
                 db.collection(COLLECTION_NAME).document(sessionId).set(payload).await()
             }
             true
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            Log.w("SeguimeRepo", "Create Seguime failed (will retry when online): ${t.message}")
             false
         }
+    }
+
+    fun observeFollowedSession(sessionId: String): Flow<SeguimeFollowState> = callbackFlow {
+        val cleanId = sessionId.trim()
+        if (!isValidSessionId(cleanId)) {
+            trySend(SeguimeFollowState.NotFound)
+            close()
+            return@callbackFlow
+        }
+        trySend(SeguimeFollowState.Loading)
+        val listener = db.collection(COLLECTION_NAME).document(cleanId)
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    trySend(SeguimeFollowState.Error(error.localizedMessage ?: "Error al conectar con Seguime"))
+                    return@addSnapshotListener
+                }
+                if (snap == null || !snap.exists()) {
+                    trySend(SeguimeFollowState.NotFound)
+                    return@addSnapshotListener
+                }
+                val session = snap.toObject(SeguimeSession::class.java)
+                if (session == null) {
+                    trySend(SeguimeFollowState.NotFound)
+                    return@addSnapshotListener
+                }
+                val now = System.currentTimeMillis()
+                val isExpired = session.expiresAtMillis > 0L && now > session.expiresAtMillis
+                if (session.status != "active" || isExpired) {
+                    val resolvedStatus = if (isExpired && session.status == "active") "expired" else session.status
+                    trySend(
+                        SeguimeFollowState.Ended(
+                            status = resolvedStatus,
+                            driverName = session.driverName.ifBlank { "El conductor" }
+                        )
+                    )
+                    return@addSnapshotListener
+                }
+                trySend(SeguimeFollowState.Active(session))
+            }
+        awaitClose { listener.remove() }
     }
 
     private fun pointsToFirestoreList(points: List<SeguimePoint>): List<Map<String, Any>> {
@@ -456,6 +510,21 @@ class SeguimeRepository(
 
         private val TOKEN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         private val secureRandom = SecureRandom()
+
+        private val TOKEN_REGEX = Regex("^[a-zA-Z0-9_-]{16,64}$")
+        private val QUERY_PARAM_REGEX = Regex("[?&]s=([a-zA-Z0-9_-]{16,64})")
+
+        fun isValidSessionId(sessionId: String?): Boolean {
+            return !sessionId.isNullOrBlank() && TOKEN_REGEX.matches(sessionId.trim())
+        }
+
+        fun parseSessionIdFromText(raw: String?): String? {
+            val trimmed = raw?.trim().orEmpty()
+            if (trimmed.isBlank()) return null
+            if (isValidSessionId(trimmed)) return trimmed
+            return QUERY_PARAM_REGEX.find(trimmed)?.groupValues?.getOrNull(1)
+                ?.takeIf { isValidSessionId(it) }
+        }
 
         fun generateSessionToken(): String {
             val sb = StringBuilder("seguime_")

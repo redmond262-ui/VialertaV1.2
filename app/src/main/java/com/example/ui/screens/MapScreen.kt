@@ -88,8 +88,10 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.AppBillingConfig
 import com.example.data.model.HitchhikeRequest
 import com.example.data.model.RoadAlert
+import com.example.data.model.SeguimeSession
 import com.example.data.model.UserProfile
 import com.example.data.repository.RoadAlertRepository
+import com.example.data.repository.SeguimeFollowState
 import com.example.data.repository.SeguimeRepository
 import com.example.data.repository.SosRepository
 import com.example.data.repository.UserRepository
@@ -141,6 +143,8 @@ fun MapScreen(
     proConversionEnabled: Boolean = true,
     preTripChecklistRemoteEnabled: Boolean = true,
     isGuestMode: Boolean = false,
+    followedSeguimeSessionId: String? = null,
+    onClearFollowedSeguime: () -> Unit = {},
     onRequestGoogleLogin: () -> Unit = {},
     onNavigateToCopilot: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
@@ -232,6 +236,40 @@ fun MapScreen(
     var showSeguimeManageDialog by remember { mutableStateOf(false) }
     var isStartingSeguime by remember { mutableStateOf(false) }
     var pendingOfflineCount by remember { mutableIntStateOf(OfflineAlertQueue.count(context)) }
+    var followedFocusTrigger by remember { mutableIntStateOf(0) }
+
+    val followedSeguimeState by remember(followedSeguimeSessionId) {
+        if (followedSeguimeSessionId.isNullOrBlank()) {
+            kotlinx.coroutines.flow.flowOf<SeguimeFollowState?>(null)
+        } else {
+            seguimeRepo.observeFollowedSession(followedSeguimeSessionId)
+        }
+    }.collectAsState(initial = null)
+
+    val activeFollowedSession: SeguimeSession? = (followedSeguimeState as? SeguimeFollowState.Active)?.session
+
+    LaunchedEffect(followedSeguimeState) {
+        when (val st = followedSeguimeState) {
+            is SeguimeFollowState.Ended -> {
+                val msg = if (st.status == "arrived") {
+                    "✅ ¡${st.driverName} llegó bien! Enlace cerrado por privacidad."
+                } else {
+                    "🔒 Seguime de ${st.driverName} finalizado o caducado."
+                }
+                snackbarHostState.showSnackbar(msg)
+                onClearFollowedSeguime()
+            }
+            SeguimeFollowState.NotFound -> {
+                if (!followedSeguimeSessionId.isNullOrBlank()) {
+                    snackbarHostState.showSnackbar("⏳ Enlace Seguime no encontrado o aún sin señal.")
+                }
+            }
+            is SeguimeFollowState.Error -> {
+                snackbarHostState.showSnackbar("⚠️ Error Seguime: ${st.message}")
+            }
+            else -> {}
+        }
+    }
 
     LaunchedEffect(activeAlerts) {
         pendingOfflineCount = OfflineAlertQueue.count(context)
@@ -759,6 +797,8 @@ fun MapScreen(
             isRouteActive = isRouteActive,
             isNightDimMode = isNightDimActive,
             fitRouteTrigger = fitRouteTrigger,
+            followedSession = activeFollowedSession,
+            followedFocusTrigger = followedFocusTrigger,
             onMapInteractionChange = { interacting -> isInteractingWithMap = interacting },
             onAlertSelected = { selectedAlert = it }
         )
@@ -807,6 +847,64 @@ fun MapScreen(
                 .alpha(overlayControlsAlpha)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
+                if (!followedSeguimeSessionId.isNullOrBlank()) {
+                    Surface(
+                        color = Color(0xFF0C1E35).copy(alpha = 0.96f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
+                            .testTag("followed_seguime_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (activeFollowedSession != null) {
+                                        "📡 Siguiendo a ${activeFollowedSession.driverName} • ${activeFollowedSession.speedKmH.toInt()} km/h"
+                                    } else {
+                                        "📡 Conectando con vehículo compartido..."
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF7DD3FC),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = activeFollowedSession?.destinationTitle?.takeIf { it.isNotBlank() }
+                                        ?.let { "🎯 Hacia $it • Dentro de VíaAlerta" }
+                                        ?: "Ubicación en tiempo real dentro de VíaAlerta",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.78f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (activeFollowedSession != null) {
+                                TextButton(
+                                    onClick = { followedFocusTrigger++ },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.testTag("follow_locate_btn")
+                                ) {
+                                    Text("🎯 Ubicar", color = Amber400, fontWeight = FontWeight.Black)
+                                }
+                            }
+                            IconButton(
+                                onClick = onClearFollowedSeguime,
+                                modifier = Modifier.size(32.dp).testTag("follow_close_btn")
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Cerrar seguimiento", tint = Color.White)
+                            }
+                        }
+                    }
+                }
                 // Hide Search/Filter/Salir bar completely when navigating actively to leave maximum map view!
                 if (!isRouteActive) {
                     Row(
