@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.ui.platform.LocalContext
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -75,7 +76,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import com.example.data.model.RoadAlert
+import com.example.data.model.RoadLevels
 import com.example.data.model.UserProfile
 import com.example.data.repository.RoadAlertRepository
 import com.example.data.repository.UserRepository
@@ -100,6 +105,7 @@ fun ProfileScreen(
     showReferralsModule: Boolean = true,
     showPreTripChecklistModule: Boolean = true,
     onNavigateToAdmin: (() -> Unit)? = null,
+    onTestCopilotAudio: () -> Unit = {},
     onSignOutClicked: () -> Unit
 ) {
     val context = LocalContext.current
@@ -115,6 +121,8 @@ fun ProfileScreen(
     var isSaving by remember { mutableStateOf(false) }
     var showTutorialDialog by remember { mutableStateOf(false) }
     var showRedeemDialog by remember { mutableStateOf(false) }
+    var showAllLevels by remember { mutableStateOf(false) }
+    var isClaimingMonthlyBonus by remember { mutableStateOf(false) }
     var ownerOverrideMode by remember { mutableStateOf(UserRepository.getOwnerOverrideMode(context)) }
 
     // Driver calibration & autonomy preferences
@@ -125,6 +133,7 @@ fun ProfileScreen(
     var btMediaVoiceEnabled by remember { mutableStateOf(DriverPreferences.isBluetoothMediaVoiceEnabled(context)) }
     var vehicleType by remember { mutableStateOf(DriverPreferences.getVehicleType(context)) }
     var preTripChecklistEnabled by remember { mutableStateOf(DriverPreferences.isPreTripChecklistEnabled(context)) }
+    var fatigueIntervalMinutes by remember { mutableStateOf(DriverPreferences.getFatigueIntervalMinutes(context)) }
     var referralInput by remember { mutableStateOf("") }
     var isRedeemingReferral by remember { mutableStateOf(false) }
 
@@ -446,7 +455,8 @@ fun ProfileScreen(
                                     maxLines = 1
                                 )
                             }
-                            if (userProfile?.isBetaTester == true) {
+                            val autoBeta = RoadLevels.forXp(kotlin.math.max(userProfile?.xpTotal ?: 0, userProfile?.pointsRuta ?: 0)).autoBetaAccess
+                            if (userProfile?.isBetaTester == true || autoBeta) {
                                 Surface(
                                     color = RouteBlue500.copy(alpha = 0.18f),
                                     shape = RoundedCornerShape(8.dp),
@@ -469,12 +479,261 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Gamification: PUNTOS RUTA CARD
+            // Gamification: PUNTOS RUTA + 6 NIVELES VIALES + PIONERO DE RUTA
             val userPoints = userProfile?.pointsRuta ?: 0
             val userXpTotal = kotlin.math.max(userProfile?.xpTotal ?: 0, userPoints)
+            val currentLevel = RoadLevels.forXp(userXpTotal)
+            val nextLevel = RoadLevels.nextLevelFor(userXpTotal)
+            val levelProgress = RoadLevels.progressToNextLevel(userXpTotal)
+            val remainingXp = RoadLevels.xpRemainingForNextLevel(userXpTotal)
+            val levelAccent = Color(currentLevel.accentHex)
+            val currentMonthKey = remember {
+                java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date())
+            }
+            val monthlyAlreadyClaimed = when {
+                currentLevel.freeLegendProEligible -> userProfile?.lastLegendProClaimMonth == currentMonthKey
+                currentLevel.monthlyWeekendProBonus -> userProfile?.lastWeekendProClaimMonth == currentMonthKey
+                else -> false
+            }
             val todayPoints = userProfile?.dailyPointsEarned ?: 0
             val maxDaily = 200
 
+            // Card 2.1/2.2: Escala de 6 Niveles Viales
+            Surface(
+                color = Slate900,
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, levelAccent.copy(alpha = 0.55f)),
+                modifier = Modifier.fillMaxWidth().testTag("road_level_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = levelAccent.copy(alpha = 0.18f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, levelAccent.copy(alpha = 0.65f)),
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(currentLevel.badge, fontSize = 18.sp)
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Nivel ${currentLevel.level}/6 • ${currentLevel.title}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "$userXpTotal XP histórica (nunca baja al canjear)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = levelAccent,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Surface(
+                            color = levelAccent.copy(alpha = 0.18f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, levelAccent.copy(alpha = 0.65f))
+                        ) {
+                            Text(
+                                text = "LVL ${currentLevel.level}",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black,
+                                color = levelAccent,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    LinearProgressIndicator(
+                        progress = { levelProgress },
+                        modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
+                        color = levelAccent,
+                        trackColor = Slate800
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = if (nextLevel != null) {
+                            "Faltan $remainingXp XP para ${nextLevel.badge} ${nextLevel.title}"
+                        } else {
+                            "👑 ¡Alcanzaste el nivel máximo de trayectoria vial!"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.78f),
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Surface(
+                        color = Slate800.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Beneficio activo: ${currentLevel.perkSummary}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            val activePerks = buildList {
+                                if (currentLevel.redemptionDiscountPercent > 0) add("🏷️ -${currentLevel.redemptionDiscountPercent}% en canjes")
+                                if (currentLevel.resolveVoteWeight >= 2) add("⚖️ Voto Solucionado x2")
+                                if (currentLevel.autoBetaAccess) add("🧪 Acceso Beta")
+                                if (currentLevel.freeLegendProEligible) add("👑 PRO mensual sin costo")
+                            }
+                            if (activePerks.isNotEmpty()) {
+                                Text(
+                                    text = activePerks.joinToString(" • "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Amber400,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    if (currentLevel.monthlyWeekendProBonus || currentLevel.freeLegendProEligible) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                if (!isClaimingMonthlyBonus) {
+                                    isClaimingMonthlyBonus = true
+                                    coroutineScope.launch {
+                                        val res = userRepository.claimMonthlyLevelProBonus(currentUserId)
+                                        isClaimingMonthlyBonus = false
+                                        val msg = res.getOrElse {
+                                            it.message ?: "No se pudo activar el bono mensual."
+                                        }
+                                        snackbarHostState.showSnackbar(msg)
+                                    }
+                                }
+                            },
+                            enabled = !monthlyAlreadyClaimed && !isClaimingMonthlyBonus,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (monthlyAlreadyClaimed) Slate800 else levelAccent,
+                                contentColor = if (monthlyAlreadyClaimed) Color.White.copy(alpha = 0.6f) else Color.Black
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("claim_monthly_level_bonus_btn")
+                        ) {
+                            val label = when {
+                                monthlyAlreadyClaimed -> "✅ Bono mensual de Nivel ${currentLevel.level} ya reclamado"
+                                currentLevel.freeLegendProEligible -> "👑 Reclamar Leyenda PRO Mensual (+30 días)"
+                                else -> "🛡️ Reclamar Finde PRO Mensual (+2 días)"
+                            }
+                            Text(label, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showAllLevels = !showAllLevels }
+                            .padding(horizontal = 6.dp, vertical = 8.dp)
+                            .testTag("toggle_all_levels_btn"),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (showAllLevels) "Ocultar los 6 niveles viales" else "Ver los 6 niveles y sus beneficios",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = levelAccent
+                        )
+                        Icon(
+                            imageVector = if (showAllLevels) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Expandir escala de niveles",
+                            tint = levelAccent
+                        )
+                    }
+
+                    AnimatedVisibility(visible = showAllLevels) {
+                        Column(
+                            modifier = Modifier.padding(top = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            RoadLevels.ALL_LEVELS.forEach { spec ->
+                                val isCurrent = spec.level == currentLevel.level
+                                val isUnlocked = userXpTotal >= spec.minXp
+                                val specColor = Color(spec.accentHex)
+                                Surface(
+                                    color = if (isCurrent) specColor.copy(alpha = 0.14f) else Slate800.copy(alpha = 0.7f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isCurrent) specColor else Slate700
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(spec.badge, fontSize = 18.sp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "N${spec.level} · ${spec.title} (${spec.minXp}+ XP)",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isUnlocked) Color.White else Color.White.copy(alpha = 0.65f)
+                                            )
+                                            Text(
+                                                text = spec.perkSummary,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.White.copy(alpha = if (isUnlocked) 0.8f else 0.55f)
+                                            )
+                                        }
+                                        if (isCurrent) {
+                                            Text(
+                                                text = "ACTUAL",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Black,
+                                                color = specColor
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Saldo canjeable de Puntos Ruta (separado de xpTotal)
             Surface(
                 color = Slate900,
                 shape = RoundedCornerShape(14.dp),
@@ -508,7 +767,7 @@ fun ProfileScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Mis Puntos Ruta",
+                                    text = "Puntos Canjeables",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
@@ -516,7 +775,7 @@ fun ProfileScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "$todayPoints / $maxDaily pts hoy • $userXpTotal XP acumulada",
+                                    text = "$todayPoints / $maxDaily pts hoy • Canjear no baja tu Nivel",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White.copy(alpha = 0.7f),
                                     maxLines = 1,
@@ -548,9 +807,9 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "+30 pts por reportar peligro | +15 pts al validar alerta de otro chofer | +150 pts/XP por cada invitado.",
+                        text = "+30 reportar | +15 confirmar | +20 marcar Solucionado | +25 bonus si 2+ choferes validan tu alerta | +150 invitado.",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = Color.White.copy(alpha = 0.65f)
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -566,7 +825,124 @@ fun ProfileScreen(
                     ) {
                         Icon(Icons.Default.CardGiftcard, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("🎁 Canjear Puntos por Días PRO Gratis", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        val redeemLabel = if (currentLevel.redemptionDiscountPercent > 0) {
+                            "🎁 Canjear por PRO (-${currentLevel.redemptionDiscountPercent}% Nivel ${currentLevel.level})"
+                        } else {
+                            "🎁 Canjear Puntos por Días PRO Gratis"
+                        }
+                        Text(redeemLabel, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 2.3 Placa compartible "Pionero de Ruta / Impacto Comunitario"
+            val pioneerReferralCode = userProfile?.referralCode?.ifBlank { null } ?: UserRepository.buildReferralCode(currentUserId)
+            val createdAlerts = userProfile?.alertsCreatedCount ?: 0
+            val confirmedImpacts = userProfile?.confirmedImpactCount ?: 0
+            val resolvedAlerts = userProfile?.alertsResolvedCount ?: 0
+
+            Surface(
+                color = Slate900,
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, RouteBlue500.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth().testTag("pioneer_share_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${currentLevel.badge} Pionero de Ruta — Tu Impacto",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Compartí tu placa comunitaria en Estados de WhatsApp",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = RouteBlue500
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            color = Slate800,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("$createdAlerts", fontWeight = FontWeight.Black, fontSize = 16.sp, color = Amber400)
+                                Text("Reportes", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                            }
+                        }
+                        Surface(
+                            color = Slate800,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("$confirmedImpacts", fontWeight = FontWeight.Black, fontSize = 16.sp, color = SafetyGreen500)
+                                Text("Validados 2+", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                            }
+                        }
+                        Surface(
+                            color = Slate800,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("$resolvedAlerts", fontWeight = FontWeight.Black, fontSize = 16.sp, color = RouteBlue500)
+                                Text("Limpiados", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+                            val shareText = RoadLevels.buildPioneerShareText(
+                                driverName = name.ifBlank { userProfile?.name ?: "Conductor VíaAlerta" },
+                                xpTotal = userXpTotal,
+                                alertsCreated = createdAlerts,
+                                confirmedHelps = confirmedImpacts,
+                                alertsResolved = resolvedAlerts,
+                                referralCode = pioneerReferralCode
+                            )
+                            com.example.ui.components.shareViaWhatsApp(context, shareText)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = RouteBlue500,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("share_pioneer_card_btn")
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("📲 Compartir Placa «Pionero de Ruta»", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
@@ -1028,6 +1404,84 @@ fun ProfileScreen(
                             }
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Alerta de Descanso / Anti-Fatiga",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Te avisa por voz si llevás horas manejando sin parar (se reinicia tras 12 min detenido)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val fatigueOptions = listOf(
+                            0 to "Desactivado",
+                            120 to "Cada 2 hs",
+                            180 to "Cada 3 hs"
+                        )
+                        fatigueOptions.forEach { (mins, fLabel) ->
+                            val selected = fatigueIntervalMinutes == mins
+                            Surface(
+                                color = if (selected) Amber500 else Slate800,
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (selected) Amber400 else Slate700
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .clickable {
+                                        fatigueIntervalMinutes = mins
+                                        DriverPreferences.setFatigueIntervalMinutes(context, mins)
+                                    }
+                                    .testTag("fatigue_opt_$mins")
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = fLabel,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selected) Color.Black else Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedButton(
+                        onClick = onTestCopilotAudio,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("profile_test_audio_btn"),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, RouteBlue500.copy(alpha = 0.65f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = RouteBlue500)
+                    ) {
+                        Icon(Icons.Default.VolumeUp, contentDescription = "Probar audio del copiloto", modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Probar Audio del Copiloto",
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
@@ -1404,6 +1858,12 @@ fun ProfileScreen(
         // Points Redemption Dialog
         if (showRedeemDialog) {
             val pts = userProfile?.pointsRuta ?: 0
+            val dialogXp = kotlin.math.max(userProfile?.xpTotal ?: 0, pts)
+            val dialogLevel = RoadLevels.forXp(dialogXp)
+            val cost3 = RoadLevels.discountedPointsCost(300, dialogXp)
+            val cost7 = RoadLevels.discountedPointsCost(600, dialogXp)
+            val cost15 = RoadLevels.discountedPointsCost(1200, dialogXp)
+
             AlertDialog(
                 onDismissRequest = { showRedeemDialog = false },
                 containerColor = Slate900,
@@ -1419,10 +1879,27 @@ fun ProfileScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            text = "Tenés $pts Puntos Ruta acumulados por colaborar en el mapa.",
+                            text = "Tenés $pts pts canjeables (tu $dialogXp XP de Nivel ${dialogLevel.level} nunca baja).",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.8f)
+                            color = Color.White.copy(alpha = 0.85f)
                         )
+
+                        if (dialogLevel.redemptionDiscountPercent > 0) {
+                            Surface(
+                                color = Amber500.copy(alpha = 0.16f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Amber400.copy(alpha = 0.55f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "🏷️ Descuento ${dialogLevel.badge} Nivel ${dialogLevel.level}: -${dialogLevel.redemptionDiscountPercent}% aplicado",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Amber400,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
 
                         // Option 1
                         Button(
@@ -1431,21 +1908,23 @@ fun ProfileScreen(
                                 coroutineScope.launch {
                                     val res = userRepository.redeemPointsForPro(currentUserId, 300, 3)
                                     if (res.isSuccess) {
-                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso! Tenés 3 días de VíaAlerta PRO.")
+                                        val spent = res.getOrDefault(cost3)
+                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 3 días de VíaAlerta PRO.")
                                     } else {
-                                        snackbarHostState.showSnackbar("Puntos insuficientes (necesitás 300 pts).")
+                                        snackbarHostState.showSnackbar("Puntos insuficientes (necesitás $cost3 pts).")
                                     }
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (pts >= 300) SafetyGreen500 else Slate800,
-                                contentColor = if (pts >= 300) Color.Black else Color.White.copy(alpha = 0.5f)
+                                containerColor = if (pts >= cost3) SafetyGreen500 else Slate800,
+                                contentColor = if (pts >= cost3) Color.Black else Color.White.copy(alpha = 0.5f)
                             ),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("redeem_3_days_btn"),
-                            enabled = pts >= 300
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("redeem_3_days_btn"),
+                            enabled = pts >= cost3
                         ) {
-                            Text("300 pts ➔ 3 Días PRO", fontWeight = FontWeight.Bold)
+                            val label = if (cost3 < 300) "$cost3 pts (antes 300) ➔ 3 Días PRO" else "$cost3 pts ➔ 3 Días PRO"
+                            Text(label, fontWeight = FontWeight.Bold)
                         }
 
                         // Option 2
@@ -1455,21 +1934,23 @@ fun ProfileScreen(
                                 coroutineScope.launch {
                                     val res = userRepository.redeemPointsForPro(currentUserId, 600, 7)
                                     if (res.isSuccess) {
-                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso! Tenés 7 días de VíaAlerta PRO.")
+                                        val spent = res.getOrDefault(cost7)
+                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 7 días de VíaAlerta PRO.")
                                     } else {
-                                        snackbarHostState.showSnackbar("Puntos insuficientes (necesitás 600 pts).")
+                                        snackbarHostState.showSnackbar("Puntos insuficientes (necesitás $cost7 pts).")
                                     }
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (pts >= 600) Amber500 else Slate800,
-                                contentColor = if (pts >= 600) Color.Black else Color.White.copy(alpha = 0.5f)
+                                containerColor = if (pts >= cost7) Amber500 else Slate800,
+                                contentColor = if (pts >= cost7) Color.Black else Color.White.copy(alpha = 0.5f)
                             ),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("redeem_7_days_btn"),
-                            enabled = pts >= 600
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("redeem_7_days_btn"),
+                            enabled = pts >= cost7
                         ) {
-                            Text("600 pts ➔ 7 Días PRO (1 Semana)", fontWeight = FontWeight.Bold)
+                            val label = if (cost7 < 600) "$cost7 pts (antes 600) ➔ 7 Días PRO" else "$cost7 pts ➔ 7 Días PRO (1 Semana)"
+                            Text(label, fontWeight = FontWeight.Bold)
                         }
 
                         // Option 3
@@ -1479,21 +1960,23 @@ fun ProfileScreen(
                                 coroutineScope.launch {
                                     val res = userRepository.redeemPointsForPro(currentUserId, 1200, 15)
                                     if (res.isSuccess) {
-                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso! Tenés 15 días de VíaAlerta PRO.")
+                                        val spent = res.getOrDefault(cost15)
+                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 15 días de VíaAlerta PRO.")
                                     } else {
-                                        snackbarHostState.showSnackbar("Puntos insuficientes (necesitás 1200 pts).")
+                                        snackbarHostState.showSnackbar("Puntos insuficientes (necesitás $cost15 pts).")
                                     }
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (pts >= 1200) RouteBlue500 else Slate800,
+                                containerColor = if (pts >= cost15) RouteBlue500 else Slate800,
                                 contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("redeem_15_days_btn"),
-                            enabled = pts >= 1200
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("redeem_15_days_btn"),
+                            enabled = pts >= cost15
                         ) {
-                            Text("1200 pts ➔ 15 Días PRO (Medio Mes)", fontWeight = FontWeight.Bold)
+                            val label = if (cost15 < 1200) "$cost15 pts (antes 1200) ➔ 15 Días PRO" else "$cost15 pts ➔ 15 Días PRO (Medio Mes)"
+                            Text(label, fontWeight = FontWeight.Bold)
                         }
                     }
                 },

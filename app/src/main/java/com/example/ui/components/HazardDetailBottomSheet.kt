@@ -52,6 +52,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.RoadAlert
+import com.example.data.model.RoadLevels
+import com.example.data.repository.RoadAlertRepository
 import com.example.ui.theme.AlertRed500
 import com.example.ui.theme.Amber400
 import com.example.ui.theme.Amber500
@@ -169,6 +171,26 @@ fun HazardDetailBottomSheet(
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            val isTempHazard = RoadAlertRepository.isTemporaryHazardType(alert.type)
+            val expiryLabel = RoadAlertRepository.formatExpiryStatusLabel(alert)
+            Surface(
+                color = if (isTempHazard) RouteBlue500.copy(alpha = 0.14f) else Slate800,
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (isTempHazard) RouteBlue500.copy(alpha = 0.45f) else Slate700
+                )
+            ) {
+                Text(
+                    text = expiryLabel,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isTempHazard) RouteBlue500 else Color.White.copy(alpha = 0.8f),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
 
             if (alert.type == "pozo" && alert.depthCm > 0) {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -317,7 +339,7 @@ fun HazardDetailBottomSheet(
             ) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(if (isGuestMode) "Iniciá sesión para votar o resolver" else "Marcar como Solucionado / Tapado")
+                Text(if (isGuestMode) "Iniciá sesión para votar o resolver" else "Marcar Solucionado / Tapado (+20 XP)")
             }
 
             if (onDeleteHazard != null && !isGuestMode) {

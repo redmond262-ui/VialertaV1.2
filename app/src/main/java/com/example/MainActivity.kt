@@ -1,9 +1,14 @@
 package com.example
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -44,12 +49,14 @@ import androidx.core.content.ContextCompat
 import androidx.credentials.CredentialManager
 import com.example.data.model.AppBillingConfig
 import com.example.data.model.AppFeatureFlags
+import com.example.data.model.RoadLevels
 import com.example.data.model.UserProfile
 import com.example.data.repository.BaulVialRepository
 import com.example.data.repository.BillingConfigRepository
 import com.example.data.repository.FeatureFlagsRepository
 import com.example.data.repository.HitchhikeRepository
 import com.example.data.repository.RoadAlertRepository
+import com.example.data.repository.SeguimeRepository
 import com.example.data.repository.SosRepository
 import com.example.data.repository.UserRepository
 import com.example.ui.components.ViaAlertaBottomBar
@@ -295,14 +302,21 @@ fun AppContent(
                 locationRadarManager = locationRadarManager,
                 onRequestGoogleLogin = { isGuestMode = false },
                 onSignOutClicked = {
-                    com.example.util.RoadRadarForegroundService.stop(context)
-                    com.example.util.ViaAlertaRadarHolder.shutdown()
-                    isGuestMode = false
-                    signOut(
-                        credentialManager = credentialManager,
-                        scope = coroutineScope,
-                        onSignOutComplete = { currentUser = null }
-                    )
+                    coroutineScope.launch {
+                        kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                            try {
+                                SeguimeRepository(context).finishActiveIfPresent("cancelled")
+                            } catch (_: Throwable) {}
+                        }
+                        com.example.util.RoadRadarForegroundService.stop(context)
+                        com.example.util.ViaAlertaRadarHolder.shutdown()
+                        isGuestMode = false
+                        signOut(
+                            credentialManager = credentialManager,
+                            scope = coroutineScope,
+                            onSignOutComplete = { currentUser = null }
+                        )
+                    }
                 }
             )
         }
@@ -326,6 +340,7 @@ fun MainScaffold(
     val sosRepo = remember { SosRepository(context) }
     val hitchhikeRepo = remember { HitchhikeRepository(context) }
     val baulVialRepo = remember { BaulVialRepository(context) }
+    val seguimeRepo = remember { SeguimeRepository(context) }
     val userRepo = remember { UserRepository(context) }
     val billingRepo = remember { BillingConfigRepository(context) }
     val featureFlagsRepo = remember { FeatureFlagsRepository(context) }
@@ -349,7 +364,9 @@ fun MainScaffold(
     val isOwnerOrAdmin = !isGuestMode && (currentUserEmail == "redmond262@gmail.com" ||
             userProfile?.trustRole == "admin" ||
             userProfile?.name?.contains("admin", ignoreCase = true) == true)
-    val isBetaTesterUser = !isGuestMode && (userProfile?.isBetaTester == true)
+    val userXpEffective = kotlin.math.max(userProfile?.xpTotal ?: 0, userProfile?.pointsRuta ?: 0)
+    val userLevelSpec = RoadLevels.forXp(userXpEffective)
+    val isBetaTesterUser = !isGuestMode && (userProfile?.isBetaTester == true || userLevelSpec.autoBetaAccess)
 
     val showAventonModule = FeatureFlagsRepository.isModuleEnabled(featureFlags.aventonMode, isOwnerOrAdmin, isBetaTesterUser)
     val showBaulVialModule = FeatureFlagsRepository.isModuleEnabled(featureFlags.baulVialMode, isOwnerOrAdmin, isBetaTesterUser)
@@ -429,7 +446,7 @@ fun MainScaffold(
         }
     }
 
-    // Grant 7-day PRO trial to new users and claim any pending referral rewards upon login
+    // Grant 7-day PRO trial to new users and claim pending referral + precision confirmation bonuses upon login
     LaunchedEffect(currentUserId, isGuestMode) {
         if (!isGuestMode) {
             userRepo.grantWelcomeProTrialIfEligible(currentUserId)
@@ -438,6 +455,59 @@ fun MainScaffold(
                 snackbarHostState.showSnackbar(
                     "🎁 ¡Sumaste +${claimed * UserRepository.REFERRAL_BONUS_POINTS} pts/XP y +${claimed * UserRepository.REFERRAL_BONUS_DAYS} días PRO por tus invitados!"
                 )
+            }
+            val authorBonuses = roadAlertRepo.claimAuthorConfirmationBonuses(currentUserId).getOrDefault(0)
+            if (authorBonuses > 0) {
+                snackbarHostState.showSnackbar(
+                    "🏅 ¡$authorBonuses alerta(s) tuyas confirmadas! +${authorBonuses * UserRepository.AUTHOR_CONFIRM_BONUS_POINTS} XP/pts."
+                )
+            }
+        }
+    }
+
+    // Auto-flush offline alert queue & buffered Seguime telemetry on startup and network restoration
+    LaunchedEffect(currentUserId, isGuestMode) {
+        if (!isGuestMode && com.example.util.OfflineAlertQueue.isNetworkAvailable(context)) {
+            val flushed = roadAlertRepo.flushOfflineQueue()
+            if (flushed > 0) {
+                snackbarHostState.showSnackbar("☁️ Señal recuperada: se subieron $flushed alerta(s) offline")
+            }
+            val loc = locationRadarManager.currentLocation.value
+            seguimeRepo.flushBufferedSessionIfNeeded(loc.latitude, loc.longitude, loc.speedKmH, loc.heading)
+        }
+    }
+
+    if (!isGuestMode) {
+        DisposableEffect(currentUserId) {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(1500L)
+                        val flushed = roadAlertRepo.flushOfflineQueue()
+                        if (flushed > 0) {
+                            snackbarHostState.showSnackbar("☁️ Señal recuperada: se subieron $flushed alerta(s) offline")
+                        }
+                        val loc = locationRadarManager.currentLocation.value
+                        seguimeRepo.flushBufferedSessionIfNeeded(loc.latitude, loc.longitude, loc.speedKmH, loc.heading)
+                    }
+                }
+            }
+            val registered = try {
+                val request = NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+                cm?.registerNetworkCallback(request, callback)
+                cm != null
+            } catch (_: Throwable) {
+                false
+            }
+            onDispose {
+                if (registered) {
+                    try {
+                        cm?.unregisterNetworkCallback(callback)
+                    } catch (_: Throwable) {}
+                }
             }
         }
     }
@@ -465,6 +535,29 @@ fun MainScaffold(
     }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var isActiveTripNavigation by remember { mutableStateOf(false) }
+
+    // Fallback Anti-Fatigue monitor when Foreground Service is not active
+    val isForegroundRunning by com.example.util.ViaAlertaRadarHolder.isForegroundServiceRunning.collectAsState()
+    LaunchedEffect(currentUserId, isGuestMode, isForegroundRunning) {
+        if (!isGuestMode && !isForegroundRunning) {
+            while (true) {
+                val loc = locationRadarManager.currentLocation.value
+                val fatigueMins = DriverPreferences.checkAndConsumeAntiFatigueWarning(
+                    context = context,
+                    speedKmH = loc.speedKmH,
+                    isRouteActive = isActiveTripNavigation
+                )
+                if (fatigueMins != null) {
+                    val hoursText = if (fatigueMins % 60 == 0) "${fatigueMins / 60} horas" else "$fatigueMins minutos"
+                    voiceCopilotManager.speak(
+                        "Llevás $hoursText de manejo continuo. Te sugerimos parar 10 minutos a descansar e hidratarte.",
+                        isWarning = true
+                    )
+                }
+                kotlinx.coroutines.delay(15_000L)
+            }
+        }
+    }
 
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -520,13 +613,16 @@ fun MainScaffold(
                         alertId = alert.id,
                         currentConfirmations = alert.confirmations,
                         reporterUid = alert.reporterUid,
-                        alertCreatedMillis = createdMs
+                        alertCreatedMillis = createdMs,
+                        alertType = alert.type
                     )
                 } else {
                     roadAlertRepo.reportAlertNotThere(
                         alertId = alert.id,
                         currentNotThereVotes = alert.notThereVotes,
-                        currentConfirmations = alert.confirmations
+                        currentConfirmations = alert.confirmations,
+                        voteWeight = userLevelSpec.resolveVoteWeight,
+                        forceOwnerResolve = (alert.reporterUid == currentUserId || isOwnerOrAdmin)
                     )
                 }
             }
@@ -545,20 +641,21 @@ fun MainScaffold(
                     directionDesc = LocationRadarManager.headingToDirectionText(heading),
                     affectsBothDirections = central,
                     estimatedKm = km,
-                    reporterName = currentUserName
+                    reporterName = currentUserName,
+                    reporterLevel = userLevelSpec.level
                 )
                 res.getOrNull()?.let { voiceCopilotManager.registerRecentAlertForVoiceUndo(it, "Pozo por impacto") }
             }
         }
         locationRadarManager.onPassOverPrompt = { alert ->
-            if (!isGuestMode && !voiceCopilotManager.isListening.value) {
+            if (!isGuestMode) {
                 val hasAudio = ContextCompat.checkSelfPermission(
                     context,
                     Manifest.permission.RECORD_AUDIO
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 if (hasAudio) {
                     voiceCopilotManager.askFollowUpQuestion(
-                        questionSpeech = "¿Seguía el peligro recién marcado en ${alert.roadName.ifBlank { "la ruta" }}? Decí sí o no.",
+                        questionSpeech = "¿Seguía el peligro recién marcado en ${alert.roadName.ifBlank { "la ruta" }}? Decí sí, confirmo o no.",
                         prompt = PendingVoicePrompt.ConfirmPassOverAlert(alert),
                         isWarning = false
                     )
@@ -578,9 +675,9 @@ fun MainScaffold(
                         context,
                         Manifest.permission.RECORD_AUDIO
                     ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    if (hasAudio && !voiceCopilotManager.isListening.value) {
+                    if (hasAudio) {
                         voiceCopilotManager.askFollowUpQuestion(
-                            questionSpeech = "Golpe fuerte detectado. ¿Marcamos un pozo ahí? Decí sí o central.",
+                            questionSpeech = "Golpe fuerte detectado. ¿Marcamos un pozo ahí? Decí sí, confirmo o central.",
                             prompt = PendingVoicePrompt.ConfirmShakeImpact(lat, lng, heading),
                             isWarning = true
                         )
@@ -743,6 +840,7 @@ fun MainScaffold(
                         showReferralsModule = showReferralsModule,
                         showPreTripChecklistModule = showPreTripModule,
                         onNavigateToAdmin = { selectedTabIndex = 7 },
+                        onTestCopilotAudio = { voiceCopilotManager.testCopilotAudio() },
                         onSignOutClicked = onSignOutClicked
                     )
                     7 -> AdminDashboardScreen(

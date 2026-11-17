@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import com.example.MainActivity
 import com.example.data.model.UserProfile
 import com.example.data.repository.RoadAlertRepository
+import com.example.data.repository.SeguimeRepository
 import com.example.data.repository.UserRepository
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -62,15 +63,23 @@ class RoadRadarForegroundService : Service() {
 
     private fun stopServiceCleanly() {
         ViaAlertaRadarHolder.isForegroundServiceRunning.value = false
-        radarMonitoringJob?.cancel()
-        profileJob?.cancel()
-        releaseWakeLock()
-        try {
-            ViaAlertaRadarHolder.getLocationRadarManager(applicationContext).stopContinuousTracking()
-            ViaAlertaRadarHolder.getVoiceCopilotManager(applicationContext).stopListening()
-        } catch (_: Throwable) {}
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        val appCtx = applicationContext
+        serviceScope.launch {
+            kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                try {
+                    SeguimeRepository(appCtx).finishActiveIfPresent("cancelled")
+                } catch (_: Throwable) {}
+            }
+            radarMonitoringJob?.cancel()
+            profileJob?.cancel()
+            releaseWakeLock()
+            try {
+                ViaAlertaRadarHolder.getLocationRadarManager(appCtx).stopContinuousTracking()
+                ViaAlertaRadarHolder.getVoiceCopilotManager(appCtx).stopListening()
+            } catch (_: Throwable) {}
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     private fun acquireWakeLock() {
@@ -101,6 +110,7 @@ class RoadRadarForegroundService : Service() {
         val radar = ViaAlertaRadarHolder.getLocationRadarManager(appCtx)
         val alertRepo = RoadAlertRepository(appCtx)
         val userRepo = UserRepository(appCtx)
+        val seguimeRepo = SeguimeRepository(appCtx)
 
         ViaAlertaRadarHolder.ensureDefaultCallbacks(appCtx)
         ViaAlertaRadarHolder.isForegroundServiceRunning.value = true
@@ -121,6 +131,8 @@ class RoadRadarForegroundService : Service() {
 
         if (radarMonitoringJob?.isActive == true) return
 
+        var lastFatigueEvalMs = 0L
+        var lastNotifiedSeguimeActive: Boolean? = null
         radarMonitoringJob = serviceScope.launch {
             try {
                 combine(
@@ -140,6 +152,43 @@ class RoadRadarForegroundService : Service() {
                         isProUser = isPro,
                         currentUserId = currentUser.uid
                     )
+
+                    val now = System.currentTimeMillis()
+                    if (now - lastFatigueEvalMs >= 15_000L) {
+                        lastFatigueEvalMs = now
+                        val fatigueMins = DriverPreferences.checkAndConsumeAntiFatigueWarning(
+                            context = appCtx,
+                            speedKmH = if (isSimulating) 90f else driverLoc.speedKmH,
+                            isRouteActive = false,
+                            nowMillis = now
+                        )
+                        if (fatigueMins != null) {
+                            val hoursText = if (fatigueMins % 60 == 0) "${fatigueMins / 60} horas" else "$fatigueMins minutos"
+                            ViaAlertaRadarHolder.getVoiceCopilotManager(appCtx).speak(
+                                "Llevás $hoursText de manejo continuo. Te sugerimos parar 10 minutos a descansar e hidratarte.",
+                                isWarning = true
+                            )
+                        }
+                    }
+
+                    val activeSeguimeId = seguimeRepo.getActiveSessionId()
+                    val isSeguimeActive = activeSeguimeId != null
+                    if (lastNotifiedSeguimeActive != isSeguimeActive) {
+                        lastNotifiedSeguimeActive = isSeguimeActive
+                        try {
+                            val nm = getSystemService(NotificationManager::class.java)
+                            nm?.notify(NOTIFICATION_ID, buildForegroundNotification(isSeguimeActive))
+                        } catch (_: Throwable) {}
+                    }
+                    if (activeSeguimeId != null) {
+                        seguimeRepo.updateSessionMetadataOrLocation(
+                            sessionId = activeSeguimeId,
+                            latitude = driverLoc.latitude,
+                            longitude = driverLoc.longitude,
+                            speedKmH = driverLoc.speedKmH,
+                            heading = driverLoc.heading
+                        )
+                    }
                 }
             } catch (t: Throwable) {
                 Log.w("RoadRadarService", "Radar monitoring loop error: ${t.message}")
@@ -148,40 +197,8 @@ class RoadRadarForegroundService : Service() {
     }
 
     private fun startInForeground() {
-        val launchIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val stopIntent = Intent(this, RoadRadarForegroundService::class.java).apply {
-            action = ACTION_STOP
-        }
-        val stopPendingIntent = PendingIntent.getService(
-            this,
-            1,
-            stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("VíaAlerta: Copiloto en Ruta Activo")
-            .setContentText("Alertas de pozos y peligros activas aunque cambies de app o apagues la pantalla.")
-            .setSmallIcon(android.R.drawable.ic_dialog_map)
-            .setOngoing(true)
-            .setContentIntent(pendingIntent)
-            .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "Detener Copiloto",
-                stopPendingIntent
-            )
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
-            .build()
+        val seguimeActive = SeguimeRepository(applicationContext).getActiveSessionId() != null
+        val notification = buildForegroundNotification(seguimeActive)
 
         try {
             val hasAudio = ContextCompat.checkSelfPermission(
@@ -219,6 +236,54 @@ class RoadRadarForegroundService : Service() {
                 } catch (_: Throwable) {}
             }
         }
+    }
+
+    private fun buildForegroundNotification(seguimeActive: Boolean): Notification {
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val stopIntent = Intent(this, RoadRadarForegroundService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val title = if (seguimeActive) {
+            "VíaAlerta: Copiloto + 📍 Seguime en Vivo ACTIVO"
+        } else {
+            "VíaAlerta: Copiloto en Ruta Activo"
+        }
+        val text = if (seguimeActive) {
+            "Compartiendo ubicación temporal de este viaje. Tocá «Detener Copiloto» para cerrar el enlace."
+        } else {
+            "Alertas de pozos y peligros activas aunque cambies de app o apagues la pantalla."
+        }
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_dialog_map)
+            .setOngoing(true)
+            .setContentIntent(pendingIntent)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Detener Copiloto",
+                stopPendingIntent
+            )
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
+            .build()
     }
 
     private fun createNotificationChannel() {

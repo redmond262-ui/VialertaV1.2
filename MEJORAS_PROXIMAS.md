@@ -38,21 +38,21 @@
 ## ETAPA 2 — Niveles, Trayectoria (XP) y Comunidad Inteligente
 *Objetivo: Motivar reportes de calidad, evitar alertas fantasma en el mapa y premiar sin castigar el nivel del usuario.*
 
-- [ ] **2.1. Separar XP Histórica (Nivel) vs Puntos Canjeables:**
+- [x] **2.1. Separar XP Histórica (Nivel) vs Puntos Canjeables:**
   - Incorporar campo `xpTotal` en perfil de usuario que **nunca baja** al canjear días PRO o beneficios.
   - Mantener `pointsRuta` como saldo canjeable.
-- [ ] **2.2. Escala de 6 Niveles Viales y Beneficios:**
+- [x] **2.2. Escala de 6 Niveles Viales y Beneficios:**
   1. `0 – 299 XP` · **Copiloto Inicial** (7 días PRO bienvenida + canje estándar)
   2. `300 – 999 XP` · **Conductor Atento** (contador de impacto comunitario + insignia)
   3. `1.000 – 2.499 XP` · **Baqueano de Ruta** (reportes con mayor peso de confianza + 10% dto. en canjes PRO)
   4. `2.500 – 5.999 XP` · **Patrulla Comunitaria** (insignia verificada en Aventón/SOS + voto doble al marcar *Solucionado* + 1 finde PRO bonus/mes)
   5. `6.000 – 14.999 XP` · **Centinela de Corredor** (25% dto. en canjes PRO + acceso beta + moderación de duplicados)
   6. `15.000+ XP` · **Leyenda Vial** (PRO sin costo manteniendo actividad mensual + emblema destacado / Pionero de Ruta)
-- [ ] **2.3. Nuevas fuentes de puntos y bonus de precisión:**
+- [x] **2.3. Nuevas fuentes de puntos y bonus de precisión:**
   - `+20 XP/pts` por marcar alertas como *Solucionado / Tapado* (limpieza activa del mapa).
   - `+25 XP/pts` bonus al autor original cuando 2 o más conductores confirman su alerta.
   - Placa compartible **"Pionero de Ruta / A cuántos conductores ayudaste"** para Estados de WhatsApp/Instagram.
-- [ ] **2.4. Caducidad inteligente según tipo de peligro (Radares Viales sí, Controles Policiales no):**
+- [x] **2.4. Caducidad inteligente según tipo de peligro (Radares Viales sí, Controles Policiales no):**
   - Alertas temporales (*neblina, agua en calzada, animales sueltos, auto en banquina*) expiran automáticamente a las pocas horas si nadie las reconfirma.
   - Alertas estructurales (*pozo, asfalto roto, alcantarilla, corte de obra, radar vial fijo*) permanecen activas o hasta recibir votos de solución.
   - *(Nota obligatoria de producto: VíaAlerta **NO incluye reportes de controles policiales**; solo radares de velocidad y peligros viales/clima/auxilio).*
@@ -64,9 +64,9 @@
 
 - [ ] **3.1. Índice de Asfalto en las 2–3 rutas sugeridas:**
   - Calcular sobre cada trazado cuántos pozos críticos, cortes u obras tiene cargados (ej. `Opción 1: 145 km • ⚠️ 9 pozos` vs `Opción 2: 154 km • ✅ Camino limpio`).
-- [ ] **3.2. Modo "Sin Señal" (Offline Inteligente):**
-  - Cachear alertas del corredor trazado al iniciar el viaje.
-  - Encolar localmente los reportes por voz o toque hechos sin 4G/5G y sincronizarlos automáticamente al recuperar conectividad.
+- [x] **3.2. Modo "Sin Señal" (Offline Inteligente):**
+  - Cachear alertas activas en Room para tramos sin señal.
+  - Encolar localmente en cola persistente (`OfflineAlertQueue`) los reportes por voz o toque hechos sin 4G/5G y sincronizarlos automáticamente al recuperar conectividad.
 - [ ] **3.3. Navegación y Pantalla de Auto:**
   - Vista apaisada nocturna de alto contraste para tablero (velocidad grande, distancia al próximo peligro, sin encandilar).
   - Recálculo automático ante desvío prolongado + indicaciones giro a giro principales por voz.
@@ -88,18 +88,12 @@
     - *Nodos Fijos Aliados en ruta (fase crecimiento):* posibilidad de dejar receptores/tablets con la app en paradores, gomerías o estaciones amigas del corredor para sincronizar alertas y balizas de cada vehículo que pasa por la puerta.
   - **Consumo optimizado (~0,3%–1%/h):** escaneo en `SCAN_MODE_LOW_POWER` con `ScanFilter` por hardware exclusivo del UUID de VíaAlerta; solo transmite al perder señal, en ruta activa o en emergencia; modo ahorro extremo varado con pantalla apagada.
   - **Permisos transparentes:** pantalla explicativa previa clara antes de solicitar `BLUETOOTH_SCAN`, `BLUETOOTH_ADVERTISE` y `BLUETOOTH_CONNECT`, con interruptor ON/OFF opcional para el usuario.
-- [ ] **3.6. Alerta Configurable de Descanso / Anti-Fatiga:**
-  - Interruptor en Perfil/Configuración para elegir si activarlo y con qué intervalo (`Desactivado` / `Cada 2 hs` / `Cada 3 hs` de conducción continua).
-- [ ] **3.7. "Seguime (Tiempo Real)" — Dashboard Familiar por WhatsApp + Respaldo BLE sin señal:**
-  - Al iniciar viaje, botón rápido para enviar por WhatsApp un **link temporal privado** a un mini-dashboard web con mapa en vivo, ruta prevista, velocidad/rumbo y botón *"Llegué bien"* (el enlace caduca solo al finalizar el viaje).
-  - **Aclaración transparente sobre señal:** tanto en el mensaje de WhatsApp como en un cartel fijo del dashboard web se explica claramente que en zonas rurales o de montaña sin cobertura celular el mapa conserva el último punto GPS y la ruta prevista y puede demorar hasta recuperar señal.
-  - **Respaldo inteligente en pozos negros de señal:**
-    - Cola local de coordenadas GPS que sincroniza el recorrido completo apenas vuelve 4G/5G.
-    - Opción de respaldo rápido por **SMS con coordenadas** cuando haya señal celular sin datos móviles.
-    - **Puente BLE cifrado (integrado a 3.5):** si el viajero lleva más de unos minutos sin internet móvil, emite un latido BLE cifrado y anónimo (sin datos personales legibles) para que otro conductor con VíaAlerta que se cruce actualice silenciosamente la foto del último checkpoint (*"Visto en cruce hacia [rumbo] a [velocidad] vía relevo"*) en el dashboard familiar al recuperar señal.
-  - **Integración automática con Aventón (0 distracción para el chofer):**
-    - *Para el Pasajero:* al tocar **"Ya subí"** (check-in), la app le prepara en 1 toque el mensaje de WhatsApp para su familia con nombre/auto/patente del chofer y el link en vivo de **`Seguime`**.
-    - *Para el Chofer:* por seguridad, WhatsApp no puede enviarse solo en segundo plano sin confirmación; por eso si el chofer ya envió su link de **`Seguime` al salir de casa**, su tablero familiar se actualiza automáticamente en la nube avisando que levantó un pasajero verificado (sin que el chofer tenga que tocar la pantalla ni abrir WhatsApp manejando). El seguimiento de ese tramo se cierra solo al bajar el pasajero.
+- [x] **3.6. Alerta Configurable de Descanso / Anti-Fatiga:**
+  - Selector en Perfil/Configuración para elegir si activarlo y con qué intervalo (`Desactivado` / `Cada 2 hs` / `Cada 3 hs` de conducción continua).
+- [x] **3.7. "Seguime (Tiempo Real)" — Dashboard Familiar por WhatsApp (Base En Vivo + Cola Offline; Puente BLE en 3.5):**
+  - Al iniciar viaje o desde el mapa, botón rápido para enviar por WhatsApp/compartir un **link temporal privado** (`seguime.html?s=...`) a un mini-dashboard web con mapa en vivo, huella reciente, velocidad/rumbo y cierre *"¡Llegué bien!"* (caducidad y borrado inmediato de coordenadas al llegar, detener viaje, cerrar app, cancelar o máximo a las 8h).
+  - **Aclaración transparente sobre señal:** tanto en el mensaje de WhatsApp como en un cartel fijo del dashboard web se explica claramente que en zonas rurales o de montaña sin cobertura celular el mapa conserva el último punto GPS y actualiza al recuperar señal.
+  - **Respaldo offline en pozos negros de señal:** cola local de coordenadas GPS (`recentPoints`) que sincroniza automáticamente al recuperar 4G/5G (quedan pendientes para próxima etapa: respaldo por SMS sin datos móviles, puente BLE 3.5 e integración directa con Aventón).
 - [ ] **3.8. Validación de Identidad Progresiva en 3 Capas (Aventón y Baúl Vial):**
   - **Capa 1 — Costo $0 y sin riesgo legal (no guardar fotos de DNI en base propia):**
     - *Teléfono verificado por SMS (Firebase Phone Auth)* obligatorio para usar Aventón o reclamar ítems en Baúl Vial.

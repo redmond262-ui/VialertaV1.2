@@ -21,6 +21,11 @@
         "referredByUid": { "type": "string", "description": "UID of referring driver" },
         "referredByCode": { "type": "string", "description": "Referral code redeemed" },
         "referralCount": { "type": "integer", "description": "Count of successful referred drivers" },
+        "alertsCreatedCount": { "type": "integer", "description": "Total hazards reported by user" },
+        "alertsResolvedCount": { "type": "integer", "description": "Total hazards resolved by user" },
+        "confirmedImpactCount": { "type": "integer", "description": "Total community confirmations earned" },
+        "lastWeekendProClaimMonth": { "type": "string", "description": "yyyy-MM month of last Level 4+ weekend PRO claim" },
+        "lastLegendProClaimMonth": { "type": "string", "description": "yyyy-MM month of last Level 6 Legend PRO renewal" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
       },
@@ -97,6 +102,10 @@
         "reporterUid": { "type": "string", "description": "Author user UID" },
         "reporterName": { "type": "string", "description": "Author display name" },
         "confirmations": { "type": "integer", "description": "Community confirmation votes" },
+        "notThereVotes": { "type": "integer", "description": "Resolved/gone votes" },
+        "expiresAtMillis": { "type": "integer", "description": "0 for structural hazards; epoch millis for auto-expiring temporary hazards" },
+        "authorBonusAwarded": { "type": "boolean", "description": "Whether author claimed +25 XP/pts confirmation bonus" },
+        "reporterLevel": { "type": "integer", "description": "Author Road Level (1-6) at report time" },
         "status": { "type": "string", "enum": ["active", "resolved"], "description": "Alert status" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
@@ -176,6 +185,29 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
       },
       "required": ["type", "category", "title", "roadName", "publisherUid", "verificationQuestion", "claimStatus", "status", "createdAt"]
+    },
+    "SeguimeSession": {
+      "title": "Seguime Real-Time Family Trip Tracking Session",
+      "description": "Private temporary live trip location session shared via unguessable link with WhatsApp family contacts",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string", "description": "Driver auth UID" },
+        "driverName": { "type": "string", "description": "Driver display name" },
+        "vehicleSummary": { "type": "string", "description": "Vehicle description and license plate" },
+        "destinationTitle": { "type": "string", "description": "Destination place or route" },
+        "originName": { "type": "string", "description": "Starting route/city name" },
+        "status": { "type": "string", "enum": ["active", "arrived", "cancelled"], "description": "Live tracking status" },
+        "latitude": { "type": "number", "description": "Latest GPS latitude" },
+        "longitude": { "type": "number", "description": "Latest GPS longitude" },
+        "speedKmH": { "type": "number", "description": "Latest vehicle speed in km/h" },
+        "heading": { "type": "number", "description": "Latest compass bearing in degrees" },
+        "offlineBuffered": { "type": "boolean", "description": "Whether latest point was recovered after an offline gap" },
+        "recentPoints": { "type": "array", "description": "Bounded breadcrumb coordinates (max 40) of recent route trail" },
+        "expiresAtMillis": { "type": "integer", "description": "Session expiration epoch millis" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["ownerUid", "driverName", "status", "latitude", "longitude", "expiresAtMillis", "createdAt"]
     }
   },
   "firestore": {
@@ -210,6 +242,10 @@
     "/baul_vial/{itemId}": {
       "schema": "BaulVialItem",
       "description": "Baul Vial community lost and found items"
+    },
+    "/seguime_sessions/{sessionId}": {
+      "schema": "SeguimeSession",
+      "description": "Private temporary live trip sharing sessions accessed by exact secret session ID"
     }
   }
 }

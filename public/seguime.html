@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>VíaAlerta • Seguime en Tiempo Real</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg: #020617;
+      --surface: #0f172a;
+      --surface-2: #1e293b;
+      --border: #334155;
+      --amber: #f59e0b;
+      --amber-light: #fbbf24;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #38bdf8;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .topbar {
+      background: rgba(15, 23, 42, 0.96);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      z-index: 30;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #fbbf24, #d97706);
+      color: #020617;
+      font-weight: 900;
+      font-size: 14px;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .status-live {
+      background: rgba(34, 197, 94, 0.16);
+      color: var(--green);
+      border: 1px solid rgba(34, 197, 94, 0.5);
+    }
+    .status-arrived {
+      background: rgba(56, 189, 248, 0.18);
+      color: var(--blue);
+      border: 1px solid rgba(56, 189, 248, 0.55);
+    }
+    .status-stale {
+      background: rgba(245, 158, 11, 0.18);
+      color: var(--amber-light);
+      border: 1px solid rgba(245, 158, 11, 0.5);
+    }
+    .status-error {
+      background: rgba(239, 68, 68, 0.18);
+      color: var(--red);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+    }
+    .coverage-banner {
+      background: #0b162c;
+      border-bottom: 1px solid #1e3a5f;
+      padding: 7px 14px;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #bae6fd;
+      z-index: 25;
+    }
+    #map-container {
+      position: relative;
+      flex: 1;
+      min-height: 220px;
+      width: 100%;
+    }
+    #seguime-map {
+      width: 100%;
+      height: 100%;
+      background: #020617;
+    }
+    .center-msg {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 50;
+      text-align: center;
+    }
+    .msg-card {
+      max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px 20px;
+    }
+    .bottom-card {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 12px 14px 14px;
+      z-index: 30;
+    }
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 10px 0;
+    }
+    .metric-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px 10px;
+    }
+    .metric-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+    .metric-value {
+      font-size: 15px;
+      font-weight: 900;
+      color: var(--text);
+      margin-top: 2px;
+    }
+    .actions-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      flex: 1;
+      min-width: 140px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 11px 14px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 13px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-amber { background: var(--amber); color: #020617; }
+    .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .hidden { display: none !important; }
+    .driver-pulse {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #22c55e;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.35), 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">VA</div>
+      <div style="min-width:0;">
+        <div style="font-weight:900;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          Seguime en Vivo • VíaAlerta
+        </div>
+        <div id="header-sub" style="font-size:11px;color:var(--muted);">Conectando con enlace privado...</div>
+      </div>
+    </div>
+    <span id="status-badge" class="status-pill status-stale">⏳ Cargando...</span>
+  </header>
+
+  <div class="coverage-banner">
+    📡 <strong>Cobertura y Privacidad:</strong> En zonas sin señal 4G/5G conserva el último punto GPS enviado y actualiza al volver cobertura. Este enlace <strong>caduca automáticamente al llegar o cancelar</strong> el viaje.
+  </div>
+
+  <div id="map-container">
+    <div id="seguime-map"></div>
+    <div id="overlay-state" class="center-msg">
+      <div class="msg-card">
+        <div id="overlay-emoji" style="font-size:38px;">🛰️</div>
+        <h2 id="overlay-title" style="margin:10px 0 6px;font-size:19px;">Abriendo recorrido en vivo...</h2>
+        <p id="overlay-desc" style="margin:0 0 14px;color:var(--muted);font-size:13px;line-height:1.45;">
+          Verificando el enlace temporal privado compartido desde VíaAlerta.
+        </p>
+        <a href="/index.html" class="btn btn-amber" style="display:inline-flex;">📱 Conocer VíaAlerta</a>
+      </div>
+    </div>
+  </div>
+
+  <section class="bottom-card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+      <div>
+        <div id="driver-title" style="font-weight:900;font-size:16px;color:var(--text);">Conductor</div>
+        <div id="vehicle-sub" style="font-size:12px;color:var(--amber-light);font-weight:600;"></div>
+      </div>
+      <div id="dest-pill" style="font-size:12px;color:#cbd5e1;font-weight:700;"></div>
+    </div>
+
+    <div class="telemetry-grid">
+      <div class="metric-box">
+        <div class="metric-label">Velocidad</div>
+        <div class="metric-value" id="metric-speed">-- km/h</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Rumbo</div>
+        <div class="metric-value" id="metric-heading">--</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Último latido</div>
+        <div class="metric-value" id="metric-updated">--</div>
+      </div>
+    </div>
+
+    <div class="actions-row">
+      <a id="btn-google-maps" href="#" target="_blank" rel="noopener" class="btn btn-amber">
+        🗺️ Abrir última posición en Maps
+      </a>
+      <button id="btn-recenter" class="btn btn-ghost">🎯 Centrar en vehículo</button>
+    </div>
+  </section>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+    import {
+      getFirestore,
+      doc,
+      onSnapshot
+    } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+    const DATABASE_ID = "ai-studio-android-vaalerta-3533dd73-4db6-41b5-819b-be628adc8d93";
+    const firebaseConfig = {
+      apiKey: "AIzaSyBQttE7Xh8DHq1y2tGSrjU9CJxtX7nW_wA",
+      authDomain: "gen-lang-client-0699193083.firebaseapp.com",
+      projectId: "gen-lang-client-0699193083",
+      storageBucket: "gen-lang-client-0699193083.firebasestorage.app",
+      messagingSenderId: "240787858654",
+      appId: "1:240787858654:android:11ea09f0ab7834927d0e4f"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app, DATABASE_ID);
+
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = (params.get("s") || "").trim();
+
+    let map = null;
+    let driverMarker = null;
+    let trailLine = null;
+    let latestLatLng = null;
+    let latestData = null;
+
+    function headingToLabel(deg) {
+      if (typeof deg !== "number" || deg < 0) return "Estacionado";
+      if (deg >= 337.5 || deg < 22.5) return "Norte";
+      if (deg < 67.5) return "Noreste";
+      if (deg < 112.5) return "Este";
+      if (deg < 157.5) return "Sureste";
+      if (deg < 202.5) return "Sur";
+      if (deg < 247.5) return "Suroeste";
+      if (deg < 292.5) return "Oeste";
+      return "Noroeste";
+    }
+
+    function formatRelative(millis) {
+      if (!millis) return "Recién";
+      const diffSec = Math.max(0, Math.round((Date.now() - millis) / 1000));
+      if (diffSec < 60) return `hace ${diffSec}s`;
+      const mins = Math.floor(diffSec / 60);
+      if (mins < 60) return `hace ${mins}m`;
+      return `hace ${Math.floor(mins / 60)}h`;
+    }
+
+    function initMap(lat, lng) {
+      if (map) return;
+      map = L.map("seguime-map", { zoomControl: true }).setView([lat, lng], 14);
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap &copy; CARTO"
+      }).addTo(map);
+    }
+
+    function showOverlay(emoji, title, desc) {
+      $("overlay-emoji").textContent = emoji;
+      $("overlay-title").textContent = title;
+      $("overlay-desc").textContent = desc;
+      $("overlay-state").classList.remove("hidden");
+    }
+
+    function hideOverlay() {
+      $("overlay-state").classList.add("hidden");
+    }
+
+    function wipePrivacyState() {
+      latestLatLng = null;
+      if (driverMarker && map) {
+        map.removeLayer(driverMarker);
+      }
+      driverMarker = null;
+      if (trailLine && map) {
+        map.removeLayer(trailLine);
+      }
+      trailLine = null;
+      $("metric-speed").textContent = "--";
+      $("metric-heading").textContent = "--";
+      $("metric-updated").textContent = "--";
+      $("vehicle-sub").textContent = "Enlace temporal finalizado";
+      $("dest-pill").textContent = "🔒 Ubicación eliminada";
+      const mapsBtn = $("btn-google-maps");
+      if (mapsBtn) {
+        mapsBtn.href = "#";
+        mapsBtn.classList.add("hidden");
+      }
+      const recenterBtn = $("btn-recenter");
+      if (recenterBtn) {
+        recenterBtn.classList.add("hidden");
+      }
+    }
+
+    function renderSession(data) {
+      latestData = data;
+      const now = Date.now();
+      const updatedMillis = data.updatedAt?.toMillis ? data.updatedAt.toMillis() : (data.createdAt?.toMillis ? data.createdAt.toMillis() : now);
+      const ageSec = Math.max(0, Math.round((now - updatedMillis) / 1000));
+
+      const isExpired = Boolean(data.expiresAtMillis && now > data.expiresAtMillis);
+      const badge = $("status-badge");
+
+      // Anti-espionage enforcement: hide map and wipe location immediately when trip finishes, cancels, or expires
+      if (data.status === "arrived") {
+        badge.className = "status-pill status-arrived";
+        badge.textContent = "✅ ¡Llegó bien!";
+        $("header-sub").textContent = "Viaje finalizado";
+        $("driver-title").textContent = data.driverName || "Conductor VíaAlerta";
+        wipePrivacyState();
+        showOverlay(
+          "🏁",
+          "¡Llegó bien a destino!",
+          "El viajero finalizó su recorrido. Por privacidad, este enlace caducó automáticamente y se eliminaron las coordenadas de ubicación."
+        );
+        return;
+      }
+
+      if (data.status === "cancelled" || data.status !== "active" || isExpired) {
+        badge.className = "status-pill status-error";
+        badge.textContent = isExpired && data.status === "active" ? "⌛ Caducado" : "⛔ Enlace cerrado";
+        $("header-sub").textContent = "Seguimiento finalizado";
+        $("driver-title").textContent = data.driverName || "Conductor VíaAlerta";
+        wipePrivacyState();
+        showOverlay(
+          "🔒",
+          "Enlace de Seguime caducado",
+          "El conductor canceló este seguimiento o finalizó el tiempo máximo de viaje. No quedan datos de ubicación disponibles."
+        );
+        return;
+      }
+
+      const mapsBtn = $("btn-google-maps");
+      if (mapsBtn) mapsBtn.classList.remove("hidden");
+      const recenterBtn = $("btn-recenter");
+      if (recenterBtn) recenterBtn.classList.remove("hidden");
+
+      if (ageSec > 90) {
+        badge.className = "status-pill status-stale";
+        badge.textContent = "📡 Último punto (sin señal)";
+      } else {
+        badge.className = "status-pill status-live";
+        badge.textContent = "🟢 En ruta en vivo";
+      }
+
+      $("header-sub").textContent = data.originName ? `Desde ${data.originName}` : "Transmisión GPS privada";
+      $("driver-title").textContent = data.driverName || "Conductor VíaAlerta";
+      $("vehicle-sub").textContent = data.vehicleSummary || "Vehículo en recorrido";
+      $("dest-pill").textContent = data.destinationTitle ? `🎯 Destino: ${data.destinationTitle}` : "🛣️ Recorrido libre";
+
+      const spd = typeof data.speedKmH === "number" ? Math.round(data.speedKmH) : 0;
+      $("metric-speed").textContent = `${spd} km/h`;
+      $("metric-heading").textContent = headingToLabel(data.heading);
+      $("metric-updated").textContent = data.offlineBuffered ? `${formatRelative(updatedMillis)} (recup.)` : formatRelative(updatedMillis);
+
+      if (typeof data.latitude === "number" && typeof data.longitude === "number" && (data.latitude !== 0 || data.longitude !== 0)) {
+        latestLatLng = [data.latitude, data.longitude];
+        initMap(data.latitude, data.longitude);
+        $("btn-google-maps").href = `https://maps.google.com/?q=${data.latitude},${data.longitude}`;
+
+        const trailCoords = Array.isArray(data.recentPoints)
+          ? data.recentPoints
+              .filter((p) => p && typeof p.lat === "number" && typeof p.lng === "number" && (p.lat !== 0 || p.lng !== 0))
+              .map((p) => [p.lat, p.lng])
+          : [];
+        if (trailCoords.length === 0 || trailCoords[trailCoords.length - 1][0] !== data.latitude) {
+          trailCoords.push(latestLatLng);
+        }
+
+        if (trailLine) {
+          trailLine.setLatLngs(trailCoords);
+        } else if (trailCoords.length >= 2) {
+          trailLine = L.polyline(trailCoords, {
+            color: "#38bdf8",
+            weight: 4,
+            opacity: 0.85,
+            dashArray: "6 6"
+          }).addTo(map);
+        }
+
+        const pulseIcon = L.divIcon({
+          className: "",
+          html: '<div class="driver-pulse"></div>',
+          iconSize: [22, 22],
+          iconAnchor: [11, 11]
+        });
+
+        if (driverMarker) {
+          driverMarker.setLatLng(latestLatLng);
+        } else {
+          driverMarker = L.marker(latestLatLng, { icon: pulseIcon }).addTo(map);
+        }
+        const esc = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
+        driverMarker.bindPopup(
+          `<strong>${esc(data.driverName || "Conductor")}</strong><br>${spd} km/h • ${formatRelative(updatedMillis)}`
+        );
+        map.panTo(latestLatLng, { animate: true });
+      }
+
+      hideOverlay();
+    }
+
+    $("btn-recenter").addEventListener("click", () => {
+      if (map && latestLatLng) {
+        map.setView(latestLatLng, 15, { animate: true });
+      }
+    });
+
+    setInterval(() => {
+      if (!latestData) return;
+      if (latestData.status !== "active" || (latestData.expiresAtMillis && Date.now() > latestData.expiresAtMillis)) {
+        renderSession(latestData);
+        return;
+      }
+      const updatedMillis = latestData.updatedAt?.toMillis ? latestData.updatedAt.toMillis() : Date.now();
+      $("metric-updated").textContent = formatRelative(updatedMillis);
+    }, 5000);
+
+    if (!sessionId || !/^[a-zA-Z0-9_-]{16,64}$/.test(sessionId)) {
+      $("status-badge").className = "status-pill status-error";
+      $("status-badge").textContent = "Enlace inválido";
+      wipePrivacyState();
+      showOverlay(
+        "🔗",
+        "Enlace de Seguime incompleto",
+        "Pedile al conductor que te reenvíe el link completo de VíaAlerta por WhatsApp."
+      );
+    } else {
+      const ref = doc(db, "seguime_sessions", sessionId);
+      onSnapshot(
+        ref,
+        (snap) => {
+          if (!snap.exists()) {
+            $("status-badge").className = "status-pill status-error";
+            $("status-badge").textContent = "No encontrado";
+            showOverlay(
+              "⏳",
+              "Esperando señal inicial del vehículo...",
+              "Si el conductor salió en una zona sin 4G/5G, su ubicación aparecerá aquí apenas recupere conexión móvil."
+            );
+            return;
+          }
+          renderSession(snap.data());
+        },
+        (err) => {
+          $("status-badge").className = "status-pill status-error";
+          $("status-badge").textContent = "Sin acceso";
+          wipePrivacyState();
+          showOverlay(
+            "⚠️",
+            "No se pudo conectar al seguimiento",
+            err?.message || "Verificá tu conexión a internet e intentá recargar la página."
+          );
+        }
+      );
+    }
+  </script>
+</body>
+</html>

@@ -14,6 +14,7 @@ object DriverPreferences {
     private const val KEY_SPEED_PERCENT = "speed_calibration_percent"
     private const val KEY_SPEED_OFFSET_KMH = "speed_calibration_kmh"
     private const val KEY_HANDS_FREE_LOOP = "hands_free_voice_loop"
+    private const val KEY_AUTO_HANDS_FREE_TRIP = "auto_hands_free_on_trip"
     private const val KEY_SHAKE_DETECTOR = "pothole_shake_detector"
     private const val KEY_BLUETOOTH_MEDIA_VOICE = "bluetooth_media_voice"
     private const val KEY_NIGHT_MODE = "night_mode_pref" // AUTO | ON | OFF
@@ -37,9 +38,17 @@ object DriverPreferences {
     private const val KEY_PRO_PROMPT_DISMISS_COUNT = "pro_prompt_dismiss_count"
     private const val KEY_TRIAL_24H_SHOWN_EXPIRY = "trial_24h_shown_expiry"
 
+    // 3.6 Configurable Anti-Fatigue Break Alerts
+    private const val KEY_FATIGUE_INTERVAL_MIN = "fatigue_break_interval_min" // 0 = off, 120 = 2h, 180 = 3h
+    private const val KEY_FATIGUE_DRIVE_START_MS = "fatigue_drive_start_ms"
+    private const val KEY_FATIGUE_STATIONARY_SINCE_MS = "fatigue_stationary_since_ms"
+    private const val KEY_FATIGUE_LAST_ALERT_MS = "fatigue_last_alert_ms"
+
     const val VEHICLE_AUTO = "AUTO"
     const val VEHICLE_MOTO = "MOTO"
     const val VEHICLE_CAMION = "CAMION"
+
+    const val FATIGUE_RESET_STOP_MS = 12L * 60L * 1000L // 12 min rest resets continuous driving timer
 
     const val FOUR_HOURS_MS = 4L * 60L * 60L * 1000L
     const val TWELVE_HOURS_MS = 12L * 60L * 60L * 1000L
@@ -85,6 +94,16 @@ object DriverPreferences {
     fun setHandsFreeLoopEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_HANDS_FREE_LOOP, enabled).apply()
+    }
+
+    fun isAutoHandsFreeOnTripEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_HANDS_FREE_TRIP, true)
+    }
+
+    fun setAutoHandsFreeOnTripEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_AUTO_HANDS_FREE_TRIP, enabled).apply()
     }
 
     fun isShakeDetectorEnabled(context: Context): Boolean {
@@ -313,4 +332,122 @@ object DriverPreferences {
     }
 
     fun formatSpeedLabel(speedKmH: Float): Int = speedKmH.roundToInt().coerceAtLeast(0)
+
+    // --- 3.6 Configurable Anti-Fatigue / Break Warning ---
+    data class AntiFatigueEvalResult(
+        val shouldAlert: Boolean,
+        val continuousMinutes: Int,
+        val nextDriveStartMs: Long,
+        val nextStationarySinceMs: Long,
+        val nextLastAlertMs: Long
+    )
+
+    fun getFatigueIntervalMinutes(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_FATIGUE_INTERVAL_MIN, 120)
+            .let { if (it == 0 || it == 120 || it == 180) it else 120 }
+    }
+
+    fun setFatigueIntervalMinutes(context: Context, minutes: Int) {
+        val clean = when (minutes) {
+            0 -> 0
+            180 -> 180
+            else -> 120
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putInt(KEY_FATIGUE_INTERVAL_MIN, clean).apply()
+    }
+
+    fun evaluateAntiFatigue(
+        intervalMinutes: Int,
+        speedKmH: Float,
+        isRouteActive: Boolean,
+        driveStartMs: Long,
+        stationarySinceMs: Long,
+        lastAlertMs: Long,
+        nowMillis: Long = System.currentTimeMillis()
+    ): AntiFatigueEvalResult {
+        if (intervalMinutes <= 0) {
+            return AntiFatigueEvalResult(
+                shouldAlert = false,
+                continuousMinutes = 0,
+                nextDriveStartMs = 0L,
+                nextStationarySinceMs = 0L,
+                nextLastAlertMs = 0L
+            )
+        }
+
+        val isDrivingNow = speedKmH >= 15f
+        if (isDrivingNow) {
+            val activeStart = if (driveStartMs > 0L) driveStartMs else nowMillis
+            val elapsedMs = (nowMillis - activeStart).coerceAtLeast(0L)
+            val thresholdMs = intervalMinutes * 60_000L
+            val sinceLastAlertMs = if (lastAlertMs > 0L) (nowMillis - lastAlertMs) else Long.MAX_VALUE
+            val due = elapsedMs >= thresholdMs && sinceLastAlertMs >= thresholdMs
+            return AntiFatigueEvalResult(
+                shouldAlert = due,
+                continuousMinutes = (elapsedMs / 60_000L).toInt(),
+                nextDriveStartMs = activeStart,
+                nextStationarySinceMs = 0L,
+                nextLastAlertMs = if (due) nowMillis else lastAlertMs
+            )
+        }
+
+        // Vehicle stopped or crawling (< 15 km/h)
+        if (driveStartMs <= 0L) {
+            return AntiFatigueEvalResult(
+                shouldAlert = false,
+                continuousMinutes = 0,
+                nextDriveStartMs = 0L,
+                nextStationarySinceMs = 0L,
+                nextLastAlertMs = 0L
+            )
+        }
+
+        val restThreshold = if (isRouteActive && speedKmH > 5f) FATIGUE_RESET_STOP_MS * 2 else FATIGUE_RESET_STOP_MS
+        val stoppedSince = if (stationarySinceMs > 0L) stationarySinceMs else nowMillis
+        return if ((nowMillis - stoppedSince) >= restThreshold) {
+            // Driver rested enough -> reset driving streak cleanly
+            AntiFatigueEvalResult(
+                shouldAlert = false,
+                continuousMinutes = 0,
+                nextDriveStartMs = 0L,
+                nextStationarySinceMs = 0L,
+                nextLastAlertMs = 0L
+            )
+        } else {
+            AntiFatigueEvalResult(
+                shouldAlert = false,
+                continuousMinutes = ((nowMillis - driveStartMs) / 60_000L).toInt(),
+                nextDriveStartMs = driveStartMs,
+                nextStationarySinceMs = stoppedSince,
+                nextLastAlertMs = lastAlertMs
+            )
+        }
+    }
+
+    fun checkAndConsumeAntiFatigueWarning(
+        context: Context,
+        speedKmH: Float,
+        isRouteActive: Boolean,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Int? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val interval = getFatigueIntervalMinutes(context)
+        val eval = evaluateAntiFatigue(
+            intervalMinutes = interval,
+            speedKmH = speedKmH,
+            isRouteActive = isRouteActive,
+            driveStartMs = prefs.getLong(KEY_FATIGUE_DRIVE_START_MS, 0L),
+            stationarySinceMs = prefs.getLong(KEY_FATIGUE_STATIONARY_SINCE_MS, 0L),
+            lastAlertMs = prefs.getLong(KEY_FATIGUE_LAST_ALERT_MS, 0L),
+            nowMillis = nowMillis
+        )
+        prefs.edit()
+            .putLong(KEY_FATIGUE_DRIVE_START_MS, eval.nextDriveStartMs)
+            .putLong(KEY_FATIGUE_STATIONARY_SINCE_MS, eval.nextStationarySinceMs)
+            .putLong(KEY_FATIGUE_LAST_ALERT_MS, eval.nextLastAlertMs)
+            .apply()
+        return if (eval.shouldAlert) eval.continuousMinutes else null
+    }
 }

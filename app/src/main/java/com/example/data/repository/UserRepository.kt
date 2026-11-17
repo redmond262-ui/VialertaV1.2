@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.R
 import com.example.data.OperationType
 import com.example.data.handleFirestoreError
+import com.example.data.model.RoadLevels
 import com.example.data.model.UserProfile
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -90,6 +91,11 @@ class UserRepository(private val db: FirebaseFirestore) {
                 "referredByUid" to profile.referredByUid.ifBlank { existing?.referredByUid.orEmpty() },
                 "referredByCode" to profile.referredByCode.ifBlank { existing?.referredByCode.orEmpty() },
                 "referralCount" to kotlin.math.max(profile.referralCount, existing?.referralCount ?: 0),
+                "alertsCreatedCount" to kotlin.math.max(profile.alertsCreatedCount, existing?.alertsCreatedCount ?: 0),
+                "alertsResolvedCount" to kotlin.math.max(profile.alertsResolvedCount, existing?.alertsResolvedCount ?: 0),
+                "confirmedImpactCount" to kotlin.math.max(profile.confirmedImpactCount, existing?.confirmedImpactCount ?: 0),
+                "lastWeekendProClaimMonth" to (profile.lastWeekendProClaimMonth.ifBlank { existing?.lastWeekendProClaimMonth.orEmpty() }),
+                "lastLegendProClaimMonth" to (profile.lastLegendProClaimMonth.ifBlank { existing?.lastLegendProClaimMonth.orEmpty() }),
                 "createdAt" to createdAt,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
@@ -129,6 +135,9 @@ class UserRepository(private val db: FirebaseFirestore) {
                     "dailyPointsEarned" to 0,
                     "referralCode" to generatedCode,
                     "referralCount" to 0,
+                    "alertsCreatedCount" to 0,
+                    "alertsResolvedCount" to 0,
+                    "confirmedImpactCount" to 0,
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
@@ -317,7 +326,14 @@ class UserRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun awardPointsRuta(userId: String, pointsToAdd: Int): Result<Int> {
+    suspend fun awardPointsRuta(
+        userId: String,
+        pointsToAdd: Int,
+        createdDelta: Int = 0,
+        resolvedDelta: Int = 0,
+        impactDelta: Int = 0,
+        bypassDailyCap: Boolean = false
+    ): Result<Int> {
         val docRef = db.collection("users").document(userId)
         return try {
             val profile = getUserProfile(userId) ?: return Result.failure(Exception("Usuario no encontrado"))
@@ -326,21 +342,24 @@ class UserRepository(private val db: FirebaseFirestore) {
             val currentDaily = if (profile.lastPointsDateString == todayString) profile.dailyPointsEarned else 0
             val maxAllowedToday = 200
             val remainingQuota = kotlin.math.max(0, maxAllowedToday - currentDaily)
-            val actualPointsAdded = kotlin.math.min(pointsToAdd, remainingQuota)
+            val actualPointsAdded = if (bypassDailyCap) pointsToAdd else kotlin.math.min(pointsToAdd, remainingQuota)
 
-            if (actualPointsAdded > 0) {
+            if (actualPointsAdded > 0 || createdDelta > 0 || resolvedDelta > 0 || impactDelta > 0) {
+                val baseXp = kotlin.math.max(profile.xpTotal, profile.pointsRuta)
                 val newTotalPoints = profile.pointsRuta + actualPointsAdded
-                val newXpTotal = kotlin.math.max(profile.xpTotal, profile.pointsRuta) + actualPointsAdded
-                val newDailyPoints = currentDaily + actualPointsAdded
-                docRef.update(
-                    mapOf(
-                        "pointsRuta" to newTotalPoints,
-                        "xpTotal" to newXpTotal,
-                        "dailyPointsEarned" to newDailyPoints,
-                        "lastPointsDateString" to todayString,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
+                val newXpTotal = baseXp + actualPointsAdded
+                val newDailyPoints = if (bypassDailyCap) currentDaily else currentDaily + actualPointsAdded
+                val updates = mutableMapOf<String, Any>(
+                    "pointsRuta" to newTotalPoints,
+                    "xpTotal" to newXpTotal,
+                    "dailyPointsEarned" to newDailyPoints,
+                    "lastPointsDateString" to todayString,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                if (createdDelta > 0) updates["alertsCreatedCount"] = profile.alertsCreatedCount + createdDelta
+                if (resolvedDelta > 0) updates["alertsResolvedCount"] = profile.alertsResolvedCount + resolvedDelta
+                if (impactDelta > 0) updates["confirmedImpactCount"] = profile.confirmedImpactCount + impactDelta
+                docRef.update(updates).await()
             }
             Result.success(actualPointsAdded)
         } catch (e: CancellationException) {
@@ -350,12 +369,14 @@ class UserRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun redeemPointsForPro(userId: String, pointsCost: Int, daysToGrant: Int): Result<Unit> {
+    suspend fun redeemPointsForPro(userId: String, basePointsCost: Int, daysToGrant: Int): Result<Int> {
         val docRef = db.collection("users").document(userId)
         return try {
             val profile = getUserProfile(userId) ?: return Result.failure(Exception("Usuario no encontrado"))
-            if (profile.pointsRuta < pointsCost) {
-                return Result.failure(Exception("Puntos insuficientes. Necesitás $pointsCost pts."))
+            val effectiveXp = kotlin.math.max(profile.xpTotal, profile.pointsRuta)
+            val finalCost = RoadLevels.discountedPointsCost(basePointsCost, effectiveXp)
+            if (profile.pointsRuta < finalCost) {
+                return Result.failure(Exception("Puntos insuficientes. Necesitás $finalCost pts."))
             }
 
             val now = System.currentTimeMillis()
@@ -363,15 +384,70 @@ class UserRepository(private val db: FirebaseFirestore) {
             val addedDuration = daysToGrant.toLong() * 24L * 60L * 60L * 1000L
             val newExpiry = baseTime + addedDuration
 
+            // NOTE: xpTotal intentionally NEVER decreases on point redemptions
             docRef.update(
                 mapOf(
-                    "pointsRuta" to (profile.pointsRuta - pointsCost),
+                    "pointsRuta" to (profile.pointsRuta - finalCost),
                     "isProUser" to true,
                     "proExpiresAtMillis" to newExpiry,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
-            Result.success(Unit)
+            Result.success(finalCost)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Grants monthly PRO rewards unlocked by Road Level:
+     * - Level 6 (Leyenda Vial, >= 15.000 XP): +30 days PRO free per month.
+     * - Level 4-5 (Patrulla / Centinela, >= 2.500 XP): +2 days weekend PRO per month.
+     */
+    suspend fun claimMonthlyLevelProBonus(userId: String): Result<String> {
+        val docRef = db.collection("users").document(userId)
+        return try {
+            val profile = getUserProfile(userId) ?: return Result.failure(Exception("Usuario no encontrado"))
+            val effectiveXp = kotlin.math.max(profile.xpTotal, profile.pointsRuta)
+            val level = RoadLevels.forXp(effectiveXp)
+            if (!level.monthlyWeekendProBonus && !level.freeLegendProEligible) {
+                return Result.failure(IllegalStateException("Este beneficio se desbloquea desde Nivel 4 (Patrulla Comunitaria)."))
+            }
+
+            val monthKey = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date())
+            val now = System.currentTimeMillis()
+            val baseTime = if (profile.proExpiresAtMillis > now) profile.proExpiresAtMillis else now
+
+            if (level.freeLegendProEligible && profile.lastLegendProClaimMonth != monthKey) {
+                val addedMs = 30L * 24L * 60L * 60L * 1000L
+                docRef.update(
+                    mapOf(
+                        "isProUser" to true,
+                        "proExpiresAtMillis" to (baseTime + addedMs),
+                        "lastLegendProClaimMonth" to monthKey,
+                        "lastWeekendProClaimMonth" to monthKey,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+                return Result.success("👑 ¡Beneficio Leyenda Vial! Sumaste +30 días PRO sin costo este mes.")
+            }
+
+            if (profile.lastWeekendProClaimMonth == monthKey) {
+                return Result.failure(IllegalStateException("Ya reclamaste tu bono mensual de Nivel ${level.level} este mes ($monthKey)."))
+            }
+
+            val weekendMs = 2L * 24L * 60L * 60L * 1000L
+            docRef.update(
+                mapOf(
+                    "isProUser" to true,
+                    "proExpiresAtMillis" to (baseTime + weekendMs),
+                    "lastWeekendProClaimMonth" to monthKey,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success("${level.badge} ¡Finde PRO activado (+2 días gratis por Nivel ${level.level})!")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -419,19 +495,28 @@ class UserRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    /** Admin-only helper to grant PRO days or switch a user back to Freemium. */
+    /**
+     * Admin-only helper to grant PRO licenses:
+     * - `daysToGrant > 0`: sets PRO expiring in N days from now
+     * - `daysToGrant == 0`: grants Unlimited / Lifetime PRO (`proExpiresAtMillis = 0L`)
+     * - `daysToGrant == null || daysToGrant < 0`: revokes to Freemium
+     */
     suspend fun setUserProByAdmin(targetUserId: String, daysToGrant: Int?): Result<Unit> {
         val docRef = db.collection("users").document(targetUserId)
         return try {
             val now = System.currentTimeMillis()
-            val payload = if (daysToGrant != null && daysToGrant > 0) {
-                mapOf(
+            val payload = when {
+                daysToGrant != null && daysToGrant > 0 -> mapOf(
                     "isProUser" to true,
                     "proExpiresAtMillis" to (now + daysToGrant.toLong() * 24L * 60L * 60L * 1000L),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
-            } else {
-                mapOf(
+                daysToGrant == 0 -> mapOf(
+                    "isProUser" to true,
+                    "proExpiresAtMillis" to 0L,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                else -> mapOf(
                     "isProUser" to false,
                     "proExpiresAtMillis" to (now - 1000L),
                     "updatedAt" to FieldValue.serverTimestamp()
@@ -456,6 +541,8 @@ class UserRepository(private val db: FirebaseFirestore) {
 
         const val REFERRAL_BONUS_POINTS = 150
         const val REFERRAL_BONUS_DAYS = 7
+        const val CLEANUP_BONUS_POINTS = 20
+        const val AUTHOR_CONFIRM_BONUS_POINTS = 25
 
         fun buildReferralCode(uid: String): String {
             val clean = uid.replace(Regex("[^a-zA-Z0-9]"), "").uppercase()

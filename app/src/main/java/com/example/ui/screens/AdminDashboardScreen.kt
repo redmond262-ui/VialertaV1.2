@@ -422,6 +422,43 @@ fun AdminDashboardScreen(
                     )
                     Spacer(modifier = Modifier.height(14.dp))
 
+                    // 1-Tap Presets for Client Demos or Public Launch
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                ownerOverrideMode = UserRepository.OWNER_MODE_FORCE_PRO
+                                UserRepository.setOwnerOverrideMode(context, UserRepository.OWNER_MODE_FORCE_PRO)
+                                coroutineScope.launch {
+                                    val updated = featureFlags.copy(
+                                        aventonMode = if (featureFlags.aventonMode == FeatureMode.HIDDEN) FeatureMode.BETA else featureFlags.aventonMode,
+                                        baulVialMode = if (featureFlags.baulVialMode == FeatureMode.HIDDEN) FeatureMode.BETA else featureFlags.baulVialMode,
+                                        reclamosMode = if (featureFlags.reclamosMode == FeatureMode.HIDDEN) FeatureMode.BETA else featureFlags.reclamosMode,
+                                        proConversionMode = if (featureFlags.proConversionMode == FeatureMode.HIDDEN) FeatureMode.BETA else featureFlags.proConversionMode,
+                                        referralsMode = if (featureFlags.referralsMode == FeatureMode.HIDDEN) FeatureMode.BETA else featureFlags.referralsMode,
+                                        preTripChecklistMode = if (featureFlags.preTripChecklistMode == FeatureMode.HIDDEN) FeatureMode.BETA else featureFlags.preTripChecklistMode
+                                    )
+                                    val res = activeFlagsRepo.saveFeatureFlags(updated)
+                                    if (res.isSuccess) {
+                                        snackbarHostState.showSnackbar("🎭 Demo Clientes lista: PRO activo y módulos visibles en Beta.")
+                                    } else {
+                                        snackbarHostState.showSnackbar("🌟 PRO activado en este teléfono (error al sincronizar módulos).")
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Color.Black),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("btn_owner_demo_mode")
+                        ) {
+                            Text("🎭 Demo Clientes (PRO + Beta)", fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     fun updateFlag(label: String, transform: (AppFeatureFlags) -> AppFeatureFlags) {
                         coroutineScope.launch {
                             val updated = transform(featureFlags)
@@ -435,8 +472,8 @@ fun AdminDashboardScreen(
                     }
 
                     FeatureFlagToggleRow(
-                        title = "🚗 Aventón Seguro",
-                        subtitle = "Pestaña y marcadores de pasajeros en ruta",
+                        title = "🚗 Aventón Seguro (Barra inferior)",
+                        subtitle = "Botón en barra inferior derecha y marcadores en mapa",
                         currentMode = featureFlags.aventonMode,
                         testTagPrefix = "flag_aventon",
                         onSelectMode = { mode -> updateFlag("Aventón") { it.copy(aventonMode = mode) } }
@@ -444,8 +481,8 @@ fun AdminDashboardScreen(
                     HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
 
                     FeatureFlagToggleRow(
-                        title = "🧳 Baúl Vial",
-                        subtitle = "Objetos encontrados/perdidos y reclamos",
+                        title = "🧳 Baúl Vial (Barra inferior)",
+                        subtitle = "Botón en barra inferior izquierda (objetos/reclamos)",
                         currentMode = featureFlags.baulVialMode,
                         testTagPrefix = "flag_baul",
                         onSelectMode = { mode -> updateFlag("Baúl Vial") { it.copy(baulVialMode = mode) } }
@@ -453,8 +490,8 @@ fun AdminDashboardScreen(
                     HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
 
                     FeatureFlagToggleRow(
-                        title = "📄 Reclamos Oficiales",
-                        subtitle = "Pestaña de notas por deterioro ante vialidad",
+                        title = "📄 Reclamos Oficiales (Barra inferior)",
+                        subtitle = "Botón en barra inferior derecha (notas ante vialidad)",
                         currentMode = featureFlags.reclamosMode,
                         testTagPrefix = "flag_reclamos",
                         onSelectMode = { mode -> updateFlag("Reclamos") { it.copy(reclamosMode = mode) } }
@@ -462,8 +499,8 @@ fun AdminDashboardScreen(
                     HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
 
                     FeatureFlagToggleRow(
-                        title = "⭐ Conversión PRO / Mercado Pago",
-                        subtitle = "Cartel post-viaje e hitos para pasar a PRO",
+                        title = "⭐ Conversión PRO (Cartel en Mapa)",
+                        subtitle = "No agrega pestaña: muestra cartel post-viaje e hitos PRO",
                         currentMode = featureFlags.proConversionMode,
                         testTagPrefix = "flag_pro_conv",
                         onSelectMode = { mode -> updateFlag("Conversión PRO") { it.copy(proConversionMode = mode) } }
@@ -471,8 +508,8 @@ fun AdminDashboardScreen(
                     HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
 
                     FeatureFlagToggleRow(
-                        title = "🎁 Referidos (VIA-XXXXXX)",
-                        subtitle = "Invitaciones con +150 XP y +7 días PRO",
+                        title = "🎁 Referidos VIA-XXXXXX (En Perfil)",
+                        subtitle = "Aparece dentro de tu Perfil (invitaciones +150 XP / +7d PRO)",
                         currentMode = featureFlags.referralsMode,
                         testTagPrefix = "flag_referrals",
                         onSelectMode = { mode -> updateFlag("Referidos") { it.copy(referralsMode = mode) } }
@@ -480,8 +517,8 @@ fun AdminDashboardScreen(
                     HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 10.dp))
 
                     FeatureFlagToggleRow(
-                        title = "✅ Chequeo Pre-Viaje por Voz",
-                        subtitle = "Recordatorio de seguridad al iniciar ruta",
+                        title = "✅ Chequeo Pre-Viaje (Voz y Perfil)",
+                        subtitle = "Se escucha al iniciar viaje y se configura dentro de Perfil",
                         currentMode = featureFlags.preTripChecklistMode,
                         testTagPrefix = "flag_pretrip",
                         onSelectMode = { mode -> updateFlag("Chequeo Pre-Viaje") { it.copy(preTripChecklistMode = mode) } }
@@ -491,14 +528,40 @@ fun AdminDashboardScreen(
 
             Spacer(modifier = Modifier.height(22.dp))
 
-            // Section 0B: Beta Testers & Users Management
+            // Section 0B: License Management, Beta Testers & Users
+            val nowLicenses = System.currentTimeMillis()
             val betaCount = registeredUsers.count { it.isBetaTester }
+            val activeProLicenses = registeredUsers.count { it.isProUser && (it.proExpiresAtMillis == 0L || it.proExpiresAtMillis > nowLicenses) }
+            val unlimitedLicenses = registeredUsers.count { it.isProUser && it.proExpiresAtMillis == 0L }
+            val expiringSoonLicenses = registeredUsers.count {
+                it.isProUser && it.proExpiresAtMillis > nowLicenses && (it.proExpiresAtMillis - nowLicenses) <= 7L * 86_400_000L
+            }
+
             Text(
-                text = "🧪 BETA TESTERS Y USUARIOS (${registeredUsers.size} • $betaCount Beta)",
+                text = "🪪 MANEJO DE LICENCIAS PRO Y BETA (${registeredUsers.size} usuarios)",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = Amber400
             )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AdminMetricCard(
+                    title = "Licencias PRO",
+                    value = activeProLicenses.toString(),
+                    subtitle = "$unlimitedLicenses ilimitadas",
+                    color = Amber400,
+                    modifier = Modifier.weight(1f)
+                )
+                AdminMetricCard(
+                    title = "Pruebas / Beta",
+                    value = betaCount.toString(),
+                    subtitle = "$expiringSoonLicenses vencen ≤7d",
+                    color = RouteBlue500,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -512,7 +575,7 @@ fun AdminDashboardScreen(
                     OutlinedTextField(
                         value = userSearchQuery,
                         onValueChange = { userSearchQuery = it },
-                        label = { Text("Buscar usuario por nombre, email o patente") },
+                        label = { Text("Buscar por nombre, email o patente") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("admin_user_search_input"),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -544,6 +607,14 @@ fun AdminDashboardScreen(
                         val now = System.currentTimeMillis()
                         filteredUsers.forEachIndexed { idx, user ->
                             val isPro = user.isProUser && (user.proExpiresAtMillis == 0L || user.proExpiresAtMillis > now)
+                            val daysLeft = if (isPro && user.proExpiresAtMillis > now) {
+                                kotlin.math.ceil((user.proExpiresAtMillis - now).toDouble() / 86_400_000.0).toInt().coerceAtLeast(1)
+                            } else 0
+                            val proBadgeLabel = when {
+                                isPro && user.proExpiresAtMillis == 0L -> "🌟 PRO ∞ Ilimitado"
+                                isPro -> "🌟 PRO • ${daysLeft}d"
+                                else -> "📱 Free"
+                            }
                             val userTargetId = user.userId.ifBlank { user.id }
                             Column(
                                 modifier = Modifier
@@ -593,7 +664,7 @@ fun AdminDashboardScreen(
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
                                             Text(
-                                                if (isPro) "PRO" else "Free",
+                                                proBadgeLabel,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isPro) Amber400 else Color.White.copy(alpha = 0.7f),
@@ -603,11 +674,12 @@ fun AdminDashboardScreen(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
 
+                                // License quick actions row 1: Beta toggle + Quick durations
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Button(
                                         onClick = {
@@ -629,44 +701,79 @@ fun AdminDashboardScreen(
                                             contentColor = if (user.isBetaTester) Color.Black else Color.White
                                         ),
                                         shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp),
-                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("toggle_beta_$userTargetId")
+                                        contentPadding = PaddingValues(horizontal = 6.dp),
+                                        modifier = Modifier.weight(1.2f).heightIn(min = 48.dp).testTag("toggle_beta_$userTargetId")
                                     ) {
                                         Text(
-                                            text = if (user.isBetaTester) "Quitar Beta" else "🧪 Activar Beta",
+                                            text = if (user.isBetaTester) "Quitar Beta" else "🧪 Beta",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1
                                         )
                                     }
 
+                                    listOf(7 to "+7d", 30 to "+30d", 365 to "+1 año").forEach { (days, label) ->
+                                        OutlinedButton(
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    val res = userRepository.setUserProByAdmin(userTargetId, days)
+                                                    if (res.isSuccess) {
+                                                        snackbarHostState.showSnackbar("🌟 Licencia PRO ($days días) otorgada a ${user.name.ifBlank { user.email }}")
+                                                    }
+                                                }
+                                            },
+                                            border = BorderStroke(1.dp, Amber400.copy(alpha = 0.7f)),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Amber400),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 4.dp),
+                                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                        ) {
+                                            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // License actions row 2: Lifetime/Unlimited or Revoke Free
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     OutlinedButton(
                                         onClick = {
                                             coroutineScope.launch {
-                                                val grantDays = if (isPro) null else 30
-                                                val res = userRepository.setUserProByAdmin(userTargetId, grantDays)
+                                                val res = userRepository.setUserProByAdmin(userTargetId, 0)
                                                 if (res.isSuccess) {
-                                                    snackbarHostState.showSnackbar(
-                                                        if (grantDays != null) "🌟 +30d PRO activado para ${user.name}"
-                                                        else "📱 Usuario pasado a Freemium"
-                                                    )
+                                                    snackbarHostState.showSnackbar("👑 Licencia PRO ILIMITADA activada para ${user.name.ifBlank { user.email }}")
                                                 }
                                             }
                                         },
-                                        border = BorderStroke(1.dp, if (isPro) Slate700 else Amber400),
-                                        colors = ButtonDefaults.outlinedButtonColors(
-                                            contentColor = if (isPro) Color.White.copy(alpha = 0.8f) else Amber400
-                                        ),
+                                        border = BorderStroke(1.dp, SafetyGreen500.copy(alpha = 0.8f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = SafetyGreen500),
                                         shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
                                         modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                                     ) {
-                                        Text(
-                                            text = if (isPro) "Pasar a Free" else "+30d PRO",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1
-                                        )
+                                        Text("∞ PRO Ilimitada", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val res = userRepository.setUserProByAdmin(userTargetId, null)
+                                                if (res.isSuccess) {
+                                                    snackbarHostState.showSnackbar("📱 Licencia revocada (Freemium) para ${user.name.ifBlank { user.email }}")
+                                                }
+                                            }
+                                        },
+                                        border = BorderStroke(1.dp, Slate700),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(alpha = 0.75f)),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                    ) {
+                                        Text("Revocar a Free", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                     }
                                 }
                             }

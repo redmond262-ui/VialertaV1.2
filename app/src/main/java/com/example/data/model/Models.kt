@@ -3,6 +3,7 @@ package com.example.data.model
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
+import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.ServerTimestamp
 
 @IgnoreExtraProperties
@@ -25,6 +26,9 @@ data class RoadAlert(
     val status: String = "active", // active, resolved
     val roadCategory: String = "ruta", // ruta, rural, interurbano, urbano
     val connectsTowns: String = "", // ej: "Une Navarro con Las Heras"
+    val expiresAtMillis: Long = 0L, // 0L = structural/permanent until resolved; > 0L = temporary hazard TTL
+    val authorBonusAwarded: Boolean = false, // +25 XP/pts granted when confirmations >= 2
+    val reporterLevel: Int = 1,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
@@ -73,14 +77,14 @@ data class UserProfile(
     val name: String = "",
     val email: String = "",
     val dni: String = "",
-    val isDniVerified: Boolean = false,
+    @get:PropertyName("isDniVerified") @field:PropertyName("isDniVerified") val isDniVerified: Boolean = false,
     val phone: String = "",
     val defaultVehicle: String = "",
     val defaultPlate: String = "",
     val trustRole: String = "general",
-    val isProUser: Boolean = false,
+    @get:PropertyName("isProUser") @field:PropertyName("isProUser") val isProUser: Boolean = false,
     val proExpiresAtMillis: Long = 0L,
-    val isBetaTester: Boolean = false,
+    @get:PropertyName("isBetaTester") @field:PropertyName("isBetaTester") val isBetaTester: Boolean = false,
     val xpTotal: Int = 0,
     val pointsRuta: Int = 0,
     val dailyPointsEarned: Int = 0,
@@ -89,6 +93,11 @@ data class UserProfile(
     val referredByUid: String = "",
     val referredByCode: String = "",
     val referralCount: Int = 0,
+    val alertsCreatedCount: Int = 0,
+    val alertsResolvedCount: Int = 0,
+    val confirmedImpactCount: Int = 0,
+    val lastWeekendProClaimMonth: String = "",
+    val lastLegendProClaimMonth: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
@@ -141,7 +150,7 @@ data class OnlineDriver(
     val userName: String = "",
     val routeName: String = "",
     val speedKmH: Float = 0f,
-    val isDriving: Boolean = false,
+    @get:PropertyName("isDriving") @field:PropertyName("isDriving") val isDriving: Boolean = false,
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
     val timestampMillis: Long = 0L,
@@ -172,3 +181,31 @@ data class BaulVialItem(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
+
+@IgnoreExtraProperties
+data class SeguimePoint(
+    val lat: Double = 0.0,
+    val lng: Double = 0.0,
+    val ts: Long = 0L
+)
+
+@IgnoreExtraProperties
+data class SeguimeSession(
+    @DocumentId val id: String = "",
+    val ownerUid: String = "",
+    val driverName: String = "",
+    val vehicleSummary: String = "",
+    val destinationTitle: String = "",
+    val originName: String = "",
+    val status: String = "active", // active | arrived | cancelled
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val speedKmH: Float = 0f,
+    val heading: Float = -1f,
+    val offlineBuffered: Boolean = false,
+    val recentPoints: List<SeguimePoint> = emptyList(),
+    val expiresAtMillis: Long = 0L,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+

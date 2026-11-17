@@ -106,9 +106,15 @@ fun VoiceCopilotScreen(
 
     val isListening by voiceCopilotManager.isListening.collectAsState()
     val isHandsFreeLoop by voiceCopilotManager.isHandsFreeLoop.collectAsState()
+    val isVadMonitoring by voiceCopilotManager.isVadMonitoring.collectAsState()
     val statusMessage by voiceCopilotManager.copilotStatusMessage.collectAsState()
     val lastRecognized by voiceCopilotManager.lastRecognizedText.collectAsState()
     val driverLoc by locationRadarManager.currentLocation.collectAsState()
+    val autoHandsFreeOnTripState = remember {
+        androidx.compose.runtime.mutableStateOf(
+            com.example.util.DriverPreferences.isAutoHandsFreeOnTripEnabled(context)
+        )
+    }
 
     val recentVoiceReports = remember { mutableStateListOf<String>() }
 
@@ -150,9 +156,16 @@ fun VoiceCopilotScreen(
                     reporterName = currentUserName
                 )
                 if (result.isSuccess) {
-                    result.getOrNull()?.let { voiceCopilotManager.registerRecentAlertForVoiceUndo(it, commandName) }
-                    recentVoiceReports.add(0, "🚨 $commandName en ${loc.routeName}")
-                    snackbarHostState.showSnackbar("¡$commandName publicado automáticamente!")
+                    val createdId = result.getOrNull()
+                    if (!createdId.isNullOrBlank()) {
+                        voiceCopilotManager.registerRecentAlertForVoiceUndo(createdId, commandName)
+                    }
+                    val isOffline = createdId?.startsWith(RoadAlertRepository.OFFLINE_QUEUED_PREFIX) == true
+                    recentVoiceReports.add(0, if (isOffline) "📴 $commandName (cola offline)" else "🚨 $commandName en ${loc.routeName}")
+                    snackbarHostState.showSnackbar(
+                        if (isOffline) "📴 Sin señal: $commandName en cola offline. Subirá al volver 4G."
+                        else "¡$commandName publicado automáticamente!"
+                    )
                 } else {
                     snackbarHostState.showSnackbar(result.exceptionOrNull()?.message ?: "Error al publicar")
                 }
@@ -267,10 +280,15 @@ fun VoiceCopilotScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                text = if (isListening) "🎙️ ESCUCHANDO TU VOZ..." else "Toca para activar escucha por voz",
+                text = when {
+                    isListening -> "🎙️ ESCUCHANDO COMANDO..."
+                    isVadMonitoring -> "🟢 MANOS LIBRES EN ESPERA SILENCIOSA"
+                    isHandsFreeLoop -> "🟢 MANOS LIBRES ACTIVO"
+                    else -> "Toca para activar escucha por voz"
+                },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (isListening) Amber400 else Color.White
+                color = if (isListening) Amber400 else if (isVadMonitoring || isHandsFreeLoop) SafetyGreen500 else Color.White
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -362,6 +380,59 @@ fun VoiceCopilotScreen(
                         }
                     )
                 }
+
+                androidx.compose.material3.HorizontalDivider(color = Slate800, modifier = Modifier.padding(horizontal = 14.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val next = !autoHandsFreeOnTripState.value
+                            autoHandsFreeOnTripState.value = next
+                            com.example.util.DriverPreferences.setAutoHandsFreeOnTripEnabled(context, next)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .testTag("copilot_auto_trip_handsfree_row"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Activar solo al iniciar viaje",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Enciende el manos libres al tocar «Iniciar Viaje»",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = autoHandsFreeOnTripState.value,
+                        onCheckedChange = { checked ->
+                            autoHandsFreeOnTripState.value = checked
+                            com.example.util.DriverPreferences.setAutoHandsFreeOnTripEnabled(context, checked)
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            androidx.compose.material3.OutlinedButton(
+                onClick = { voiceCopilotManager.testCopilotAudio() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("copilot_test_audio_btn"),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, RouteBlue500.copy(alpha = 0.65f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = RouteBlue500)
+            ) {
+                Icon(Icons.Default.VolumeUp, contentDescription = "Probar audio del copiloto", modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Probar Audio del Copiloto", fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -377,6 +448,11 @@ fun VoiceCopilotScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             val commands = listOf(
+                Pair("Ok / Confirmo / Sí", "Confirma alertas pendientes o golpes detectados"),
+                Pair("No / Ya no está / Cancelar", "Descarta o anula una alerta reciente"),
+                Pair("¿Cuánto falta?", "Informa por voz distancia y tiempo restante al destino"),
+                Pair("Encender manos libres", "Activa el micrófono continuo manos libres"),
+                Pair("Apagar manos libres", "Detiene la escucha continua silenciosa"),
                 Pair("Bache central", "Pozo peligroso que afecta ambos sentidos"),
                 Pair("Reportar pozo", "Publica un pozo/bache sobre tu carril"),
                 Pair("Radar vial", "Radar de velocidad o fotomulta adelante"),
@@ -394,6 +470,31 @@ fun VoiceCopilotScreen(
                             .fillMaxWidth()
                             .clickable {
                                 coroutineScope.launch {
+                                    if (cmd.contains("Cuánto falta")) {
+                                        val msg = voiceCopilotManager.onRemainingDistanceQuery?.invoke()
+                                            ?: "No tenés un destino activo en el mapa en este momento."
+                                        voiceCopilotManager.speak(msg, isWarning = false)
+                                        snackbarHostState.showSnackbar(msg)
+                                        return@launch
+                                    }
+                                    if (cmd.contains("Apagar manos libres")) {
+                                        voiceCopilotManager.setHandsFreeLoopEnabled(false, announce = true)
+                                        snackbarHostState.showSnackbar("Manos libres desactivado")
+                                        return@launch
+                                    }
+                                    if (cmd.contains("Encender manos libres")) {
+                                        val hasAudioPermission = ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.RECORD_AUDIO
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                        if (hasAudioPermission) {
+                                            voiceCopilotManager.setHandsFreeLoopEnabled(true, announce = true)
+                                            snackbarHostState.showSnackbar("Manos libres activado")
+                                        } else {
+                                            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        }
+                                        return@launch
+                                    }
                                     if (cmd.contains("Silenciar")) {
                                         voiceCopilotManager.speak("Alertas silenciadas por el resto del tramo.")
                                         snackbarHostState.showSnackbar("Alertas silenciadas")
@@ -416,7 +517,7 @@ fun VoiceCopilotScreen(
                                     }
                                     voiceCopilotManager.speak("Comando $cmd ejecutado. Publicando alerta en tu posición.")
                                     val loc = locationRadarManager.getCompensatedLocationAt(System.currentTimeMillis(), 700L)
-                                    roadAlertRepository.createAlert(
+                                    val res = roadAlertRepository.createAlert(
                                         type = type,
                                         depthCm = depth,
                                         roadName = loc.routeName,
@@ -429,8 +530,13 @@ fun VoiceCopilotScreen(
                                         estimatedKm = loc.estimatedKm,
                                         reporterName = currentUserName
                                     )
-                                    recentVoiceReports.add(0, "🚨 $cmd en ${loc.routeName}")
-                                    snackbarHostState.showSnackbar("¡$cmd registrado!")
+                                    val createdId = res.getOrNull()
+                                    val isOffline = createdId?.startsWith(RoadAlertRepository.OFFLINE_QUEUED_PREFIX) == true
+                                    recentVoiceReports.add(0, if (isOffline) "📴 $cmd (cola offline)" else "🚨 $cmd en ${loc.routeName}")
+                                    snackbarHostState.showSnackbar(
+                                        if (isOffline) "📴 Sin señal: $cmd en cola offline."
+                                        else "¡$cmd registrado!"
+                                    )
                                 }
                             }
                             .testTag("simulate_cmd_${cmd.replace(" ", "_")}"),
@@ -493,19 +599,14 @@ fun VoiceCopilotScreen(
             // Audio Test button
             Spacer(modifier = Modifier.height(20.dp))
             Button(
-                onClick = {
-                    voiceCopilotManager.speak(
-                        "Alerta de prueba: Pozo profundo de 20 centímetros detectado a 300 metros.",
-                        isWarning = true
-                    )
-                },
+                onClick = { voiceCopilotManager.testCopilotAudio() },
                 modifier = Modifier.fillMaxWidth().testTag("test_tts_audio_btn"),
                 colors = ButtonDefaults.buttonColors(containerColor = Slate800, contentColor = RouteBlue500),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(Icons.Default.VolumeUp, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Probar Alerta de Voz (Text-to-Speech)")
+                Text("Probar Audio del Copiloto (Text-to-Speech)")
             }
 
             // Recent reports

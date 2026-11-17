@@ -97,7 +97,8 @@ object ViaAlertaRadarHolder {
                             alertId = alert.id,
                             currentConfirmations = alert.confirmations,
                             reporterUid = alert.reporterUid,
-                            alertCreatedMillis = createdMs
+                            alertCreatedMillis = createdMs,
+                            alertType = alert.type
                         )
                     } else {
                         alertRepo.reportAlertNotThere(

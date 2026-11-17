@@ -101,66 +101,79 @@ fun ViaAlertaBottomBar(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceAround
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Tab 0: Mapa
-                BottomNavItem(
-                    icon = Icons.Default.Map,
-                    label = "Mapa",
-                    isSelected = selectedTabIndex == 0,
-                    testTag = "nav_item_map",
-                    onClick = { onTabSelected(0) },
-                    modifier = Modifier.weight(1f)
-                )
-
-                // Tab 8: Baúl Vial (gated remotely; Beta/Public)
-                if (showBaulVial) {
+                // Left half (strictly symmetric around center mic)
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // Tab 0: Mapa
                     BottomNavItem(
-                        icon = Icons.Default.Inventory2,
-                        label = "Baúl Vial",
-                        isSelected = selectedTabIndex == 8,
-                        testTag = "nav_item_baul_vial",
-                        onClick = { onTabSelected(8) },
+                        icon = Icons.Default.Map,
+                        label = "Mapa",
+                        isSelected = selectedTabIndex == 0,
+                        testTag = "nav_item_map",
+                        onClick = { onTabSelected(0) },
                         modifier = Modifier.weight(1f)
                     )
+
+                    // Tab 8: Baúl Vial (gated remotely; Beta/Public)
+                    if (showBaulVial) {
+                        BottomNavItem(
+                            icon = Icons.Default.Inventory2,
+                            label = "Baúl Vial",
+                            isSelected = selectedTabIndex == 8,
+                            testTag = "nav_item_baul_vial",
+                            onClick = { onTabSelected(8) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
 
-                // Center placeholder for elevated mic button
-                Spacer(modifier = Modifier.weight(1.1f))
+                // Fixed center cradle matching the elevated 64.dp mic button (never shifts off-center)
+                Spacer(modifier = Modifier.size(width = 76.dp, height = 1.dp))
 
-                // Tab 3: Aventón (gated remotely; Beta/Public)
-                if (showAventon) {
-                    BottomNavItem(
-                        icon = Icons.Default.Group,
-                        label = "Aventón",
-                        isSelected = selectedTabIndex == 3,
-                        testTag = "nav_item_hitchhike",
-                        onClick = { onTabSelected(3) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                // Right half (strictly symmetric around center mic)
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // Tab 3: Aventón (gated remotely; Beta/Public)
+                    if (showAventon) {
+                        BottomNavItem(
+                            icon = Icons.Default.Group,
+                            label = "Aventón",
+                            isSelected = selectedTabIndex == 3,
+                            testTag = "nav_item_hitchhike",
+                            onClick = { onTabSelected(3) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
-                // Tab 4: Reclamos (gated remotely)
-                if (showReclamos) {
-                    BottomNavItem(
-                        icon = Icons.AutoMirrored.Filled.Assignment,
-                        label = "Reclamos",
-                        isSelected = selectedTabIndex == 4,
-                        testTag = "nav_item_reclamos",
-                        onClick = { onTabSelected(4) },
-                        modifier = Modifier.weight(1f)
-                    )
-                } else if (!showAventon) {
-                    // Symmetrical right-side shortcut to Perfil when both Aventón & Reclamos are hidden
-                    BottomNavItem(
-                        icon = Icons.Default.Person,
-                        label = "Perfil",
-                        isSelected = selectedTabIndex == 6,
-                        testTag = "nav_item_profile_fallback",
-                        onClick = { onTabSelected(6) },
-                        modifier = Modifier.weight(1f)
-                    )
+                    // Tab 4: Reclamos (gated remotely)
+                    if (showReclamos) {
+                        BottomNavItem(
+                            icon = Icons.AutoMirrored.Filled.Assignment,
+                            label = "Reclamos",
+                            isSelected = selectedTabIndex == 4,
+                            testTag = "nav_item_reclamos",
+                            onClick = { onTabSelected(4) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else if (!showAventon) {
+                        // Symmetrical right-side shortcut to Perfil when both Aventón & Reclamos are hidden
+                        BottomNavItem(
+                            icon = Icons.Default.Person,
+                            label = "Perfil",
+                            isSelected = selectedTabIndex == 6,
+                            testTag = "nav_item_profile_fallback",
+                            onClick = { onTabSelected(6) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }

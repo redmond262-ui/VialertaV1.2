@@ -49,7 +49,13 @@ service cloud.firestore {
               (!('referralCode' in data) || data.referralCode == null || (data.referralCode is string && data.referralCode.size() <= 24)) &&
               (!('referredByUid' in data) || data.referredByUid == null || (data.referredByUid is string && data.referredByUid.size() <= 128)) &&
               (!('referredByCode' in data) || data.referredByCode == null || (data.referredByCode is string && data.referredByCode.size() <= 24)) &&
-              (!('referralCount' in data) || (data.referralCount is int && data.referralCount >= 0));
+              (!('referralCount' in data) || (data.referralCount is int && data.referralCount >= 0)) &&
+              (!('alertsCreatedCount' in data) || (data.alertsCreatedCount is int && data.alertsCreatedCount >= 0)) &&
+              (!('alertsResolvedCount' in data) || (data.alertsResolvedCount is int && data.alertsResolvedCount >= 0)) &&
+              (!('confirmedImpactCount' in data) || (data.confirmedImpactCount is int && data.confirmedImpactCount >= 0)) &&
+              (!('lastWeekendProClaimMonth' in data) || data.lastWeekendProClaimMonth == null || (data.lastWeekendProClaimMonth is string && data.lastWeekendProClaimMonth.size() <= 20)) &&
+              (!('lastLegendProClaimMonth' in data) || data.lastLegendProClaimMonth == null || (data.lastLegendProClaimMonth is string && data.lastLegendProClaimMonth.size() <= 20)) &&
+              (!('isBetaTester' in data) || data.isBetaTester is bool);
     }
 
     function isValidReferralCode(data) {
@@ -75,6 +81,19 @@ service cloud.firestore {
              (!('paymentLinkUrl' in data) || data.paymentLinkUrl == null || (data.paymentLinkUrl is string && data.paymentLinkUrl.size() <= 300));
     }
 
+    function isValidFeatureMode(val) {
+      return val in ['hidden', 'beta', 'public'];
+    }
+
+    function isValidFeatureFlags(data) {
+      return isValidFeatureMode(data.aventonMode) &&
+             isValidFeatureMode(data.baulVialMode) &&
+             (!('reclamosMode' in data) || isValidFeatureMode(data.reclamosMode)) &&
+             (!('proConversionMode' in data) || isValidFeatureMode(data.proConversionMode)) &&
+             (!('referralsMode' in data) || isValidFeatureMode(data.referralsMode)) &&
+             (!('preTripChecklistMode' in data) || isValidFeatureMode(data.preTripChecklistMode));
+    }
+
     function isValidRoadAlert(data) {
       return data.type is string && data.type.size() > 0 && data.type.size() <= 100 &&
              data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0 &&
@@ -92,7 +111,10 @@ service cloud.firestore {
              (!('confirmations' in data) || data.confirmations is int && data.confirmations >= 0) &&
              (!('notThereVotes' in data) || data.notThereVotes is int && data.notThereVotes >= 0) &&
              (!('roadCategory' in data) || data.roadCategory == null || (data.roadCategory is string && data.roadCategory.size() <= 50)) &&
-             (!('connectsTowns' in data) || data.connectsTowns == null || (data.connectsTowns is string && data.connectsTowns.size() <= 150));
+             (!('connectsTowns' in data) || data.connectsTowns == null || (data.connectsTowns is string && data.connectsTowns.size() <= 150)) &&
+             (!('expiresAtMillis' in data) || data.expiresAtMillis is int || data.expiresAtMillis is number) &&
+             (!('authorBonusAwarded' in data) || data.authorBonusAwarded is bool) &&
+             (!('reporterLevel' in data) || (data.reporterLevel is int && data.reporterLevel >= 1 && data.reporterLevel <= 6));
     }
 
     function isValidSosRequest(data) {
@@ -154,6 +176,26 @@ service cloud.firestore {
              (!('claimantAnswer' in data) || data.claimantAnswer == null || (data.claimantAnswer is string && data.claimantAnswer.size() <= 250)) &&
              (!('claimantContact' in data) || data.claimantContact == null || (data.claimantContact is string && data.claimantContact.size() <= 40)) &&
              (!('publisherContact' in data) || data.publisherContact == null || (data.publisherContact is string && data.publisherContact.size() <= 40));
+    }
+
+    function isValidSeguimeId(id) {
+      return id is string && id.size() >= 16 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSeguimeSession(data) {
+      return data.ownerUid is string && data.ownerUid.size() > 0 && data.ownerUid.size() <= 128 &&
+             data.driverName is string && data.driverName.size() > 0 && data.driverName.size() <= 100 &&
+             (!('vehicleSummary' in data) || data.vehicleSummary == null || (data.vehicleSummary is string && data.vehicleSummary.size() <= 120)) &&
+             (!('destinationTitle' in data) || data.destinationTitle == null || (data.destinationTitle is string && data.destinationTitle.size() <= 150)) &&
+             (!('originName' in data) || data.originName == null || (data.originName is string && data.originName.size() <= 150)) &&
+             data.status in ['active', 'arrived', 'cancelled'] &&
+             data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0 &&
+             data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0 &&
+             (!('speedKmH' in data) || (data.speedKmH is number && data.speedKmH >= 0.0 && data.speedKmH <= 350.0)) &&
+             (!('heading' in data) || (data.heading is number && data.heading >= -1.0 && data.heading <= 360.0)) &&
+             (!('offlineBuffered' in data) || data.offlineBuffered is bool) &&
+             (!('recentPoints' in data) || (data.recentPoints is list && data.recentPoints.size() <= 40)) &&
+             (data.expiresAtMillis is int || data.expiresAtMillis is number);
     }
 
     // --- User Profiles ---
@@ -265,7 +307,7 @@ service cloud.firestore {
     // Active public road hazards can be read in Guest Mode (read-only); writes require Google Sign-In.
     match /alerts/{alertId} {
       allow get: if isValidId(alertId) && (isSignedIn() || (resource != null && resource.data.status == 'active'));
-      allow list: if resource.data.status == 'active' || (isSignedIn() && (resource.data.status in ['active', 'resolved'] || isAdmin()));
+      allow list: if resource.data.status == 'active' || (isSignedIn() && (resource.data.status in ['active', 'resolved'] || resource.data.reporterUid == request.auth.uid || isAdmin()));
       allow create: if isSignedIn() &&
                        isValidId(alertId) &&
                        incoming().reporterUid == request.auth.uid &&
@@ -276,6 +318,10 @@ service cloud.firestore {
       allow update: if isSignedIn() &&
                        isValidId(alertId) &&
                        isValidRoadAlert(incoming()) &&
+                       (!('authorBonusAwarded' in incoming()) ||
+                         incoming().authorBonusAwarded == existing().get('authorBonusAwarded', false) ||
+                         existing().reporterUid == request.auth.uid ||
+                         isAdmin()) &&
                        (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time));
       allow delete: if isSignedIn() && (isValidId(alertId) || isAdmin());
     }
@@ -357,6 +403,28 @@ service cloud.firestore {
                          )
                        );
       allow delete: if isSignedIn() && isValidId(itemId) && (existing().publisherUid == request.auth.uid || isAdmin());
+    }
+
+    // --- Seguime (Tiempo Real): Private Family Tracking Links (get by unguessable token; list blocked) ---
+    match /seguime_sessions/{sessionId} {
+      allow get: if isValidSeguimeId(sessionId);
+      allow list: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() &&
+                       isValidSeguimeId(sessionId) &&
+                       incoming().ownerUid == request.auth.uid &&
+                       incoming().keys().hasAll(['ownerUid', 'driverName', 'status', 'latitude', 'longitude', 'expiresAtMillis', 'createdAt']) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time)) &&
+                       isValidSeguimeSession(incoming());
+      allow update: if isSignedIn() &&
+                       isValidSeguimeId(sessionId) &&
+                       (existing().ownerUid == request.auth.uid || isAdmin()) &&
+                       incoming().ownerUid == existing().ownerUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time)) &&
+                       isValidSeguimeSession(incoming());
+      allow delete: if isSignedIn() && isValidSeguimeId(sessionId) && (existing().ownerUid == request.auth.uid || isAdmin());
     }
   }
 }

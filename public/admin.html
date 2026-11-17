@@ -318,7 +318,8 @@
         <button class="tab-btn active" data-tab="map">🗺️ Mapa Nacional en Vivo</button>
         <button class="tab-btn" data-tab="alerts">⚠️ Alertas y Baches</button>
         <button class="tab-btn" data-tab="drivers">🚗 Conductores Online</button>
-        <button class="tab-btn" data-tab="users">👥 Usuarios, PRO y Beta</button>
+        <button class="tab-btn" data-tab="licenses">🪪 Licencias PRO</button>
+        <button class="tab-btn" data-tab="users">👥 Usuarios y Beta</button>
         <button class="tab-btn" data-tab="features">🚀 Módulos y Beta</button>
         <button class="tab-btn" data-tab="baul">🧳 Baúl Vial</button>
         <button class="tab-btn" data-tab="sos">🚨 SOS y Aventones</button>
@@ -394,6 +395,64 @@
         </div>
       </section>
 
+      <!-- TAB: LICENSES -->
+      <section id="tab-licenses" class="panel hidden">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">🪪 Manejo Centralizado de Licencias PRO</h2>
+            <div style="font-size:12px;color:var(--muted);">Otorgá pruebas (7d), abonos mensuales (30d), trimestrales (90d), anuales (365d) o licencias vitalicias ilimitadas en tiempo real.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="text" id="filter-licenses-q" placeholder="Buscar por nombre, email o patente..." />
+            <select id="filter-licenses-status">
+              <option value="all">Todas las cuentas</option>
+              <option value="active">PRO Activas</option>
+              <option value="expiring">Por vencer (&le; 7 días)</option>
+              <option value="unlimited">Ilimitadas (&infin;)</option>
+              <option value="free">Freemium / Expiradas</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom:16px;">
+          <div class="kpi-card">
+            <div class="kpi-label">Licencias Activas</div>
+            <div class="kpi-value" id="lic-kpi-active" style="color:var(--amber-light);font-size:26px;">0</div>
+            <div class="kpi-sub">Con funciones PRO activas</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Ilimitadas (&infin;)</div>
+            <div class="kpi-value" id="lic-kpi-unlimited" style="color:var(--green);font-size:26px;">0</div>
+            <div class="kpi-sub">Vitalicia / Staff / Socios</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Pruebas / Por Vencer</div>
+            <div class="kpi-value" id="lic-kpi-expiring" style="color:var(--blue);font-size:26px;">0</div>
+            <div class="kpi-sub">Vencen en &le; 7 días</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Plan Freemium</div>
+            <div class="kpi-value" id="lic-kpi-free" style="color:var(--muted);font-size:26px;">0</div>
+            <div class="kpi-sub">Sin licencia PRO vigente</div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Conductor / Email</th>
+                <th>Estado de Licencia</th>
+                <th>Vencimiento</th>
+                <th>Nivel / XP</th>
+                <th>Otorgar / Modificar Licencia</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-licenses"></tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- TAB: USERS -->
       <section id="tab-users" class="panel hidden">
         <div class="panel-header">
@@ -423,7 +482,10 @@
             <h2 class="panel-title">Control Remoto de Módulos (Oculto / Beta / Público)</h2>
             <div style="font-size:12px;color:var(--muted);">Los cambios aplican en tiempo real a todos los celulares sin necesidad de actualizar el APK.</div>
           </div>
-          <span class="pill">🔄 TIEMPO REAL</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button id="btn-demo-beta-all" class="btn btn-amber btn-sm">🎭 Modo Demo Dueño (Ocultos → Beta)</button>
+            <button id="btn-public-all" class="btn btn-green btn-sm">🌍 Hacer Todo Público</button>
+          </div>
         </div>
         <div class="table-wrap" style="margin-bottom:24px;">
           <table>
@@ -645,7 +707,7 @@
         document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         const target = btn.dataset.tab;
-        ["map", "alerts", "drivers", "users", "features", "baul", "sos"].forEach((name) => {
+        ["map", "alerts", "drivers", "licenses", "users", "features", "baul", "sos"].forEach((name) => {
           $(`tab-${name}`).classList.toggle("hidden", name !== target);
         });
         if (target === "map" && state.map) {
@@ -786,6 +848,86 @@
         }).join("");
     }
 
+    function renderLicenses() {
+      const now = Date.now();
+      const q = ($("filter-licenses-q")?.value || "").trim().toLowerCase();
+      const st = $("filter-licenses-status")?.value || "all";
+
+      let activeCount = 0;
+      let unlimitedCount = 0;
+      let expiringCount = 0;
+      let freeCount = 0;
+
+      state.users.forEach((u) => {
+        const exp = Number(u.proExpiresAtMillis || 0);
+        const isPro = Boolean(u.isProUser) && (exp === 0 || exp > now);
+        if (!isPro) {
+          freeCount++;
+        } else {
+          activeCount++;
+          if (exp === 0) unlimitedCount++;
+          else if ((exp - now) <= 7 * 86400000) expiringCount++;
+        }
+      });
+
+      if ($("lic-kpi-active")) $("lic-kpi-active").textContent = activeCount;
+      if ($("lic-kpi-unlimited")) $("lic-kpi-unlimited").textContent = unlimitedCount;
+      if ($("lic-kpi-expiring")) $("lic-kpi-expiring").textContent = expiringCount;
+      if ($("lic-kpi-free")) $("lic-kpi-free").textContent = freeCount;
+
+      const rows = state.users.filter((u) => {
+        const exp = Number(u.proExpiresAtMillis || 0);
+        const isPro = Boolean(u.isProUser) && (exp === 0 || exp > now);
+        if (st === "active" && !isPro) return false;
+        if (st === "unlimited" && !(isPro && exp === 0)) return false;
+        if (st === "expiring" && !(isPro && exp > now && (exp - now) <= 7 * 86400000)) return false;
+        if (st === "free" && isPro) return false;
+        if (!q) return true;
+        return (`${u.name || ""} ${u.email || ""} ${u.defaultPlate || ""} ${u.dni || ""}`).toLowerCase().includes(q);
+      });
+
+      const tbody = $("tbody-licenses");
+      if (!tbody) return;
+      tbody.innerHTML = rows.length === 0
+        ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:24px;">No hay cuentas que coincidan con el filtro de licencias.</td></tr>`
+        : rows.map((u) => {
+          const exp = Number(u.proExpiresAtMillis || 0);
+          const proActive = Boolean(u.isProUser) && (exp === 0 || exp > now);
+          const daysLeft = exp > now ? Math.ceil((exp - now) / 86400000) : 0;
+          const badge = !proActive
+            ? `<span class="tag tag-slate">📱 Freemium</span>`
+            : exp === 0
+              ? `<span class="tag tag-green">∞ PRO Ilimitada</span>`
+              : daysLeft <= 7
+                ? `<span class="tag tag-amber">⏳ PRO (${daysLeft}d)</span>`
+                : `<span class="tag tag-amber">🌟 PRO (${daysLeft}d)</span>`;
+          const expText = !proActive
+            ? (exp > 0 ? `Venció ${new Date(exp).toLocaleDateString("es-AR")}` : "Sin licencia")
+            : (exp === 0 ? "Vitalicia / Sin vencimiento" : new Date(exp).toLocaleDateString("es-AR"));
+
+          return `
+            <tr>
+              <td>
+                <strong>${escapeHtml(u.name || "Sin nombre")}</strong><br>
+                <span style="color:var(--muted);font-size:12px;">${escapeHtml(u.email || u.userId)}</span>
+                ${u.isBetaTester ? ` <span class="tag tag-blue">🧪 BETA</span>` : ""}
+              </td>
+              <td>${badge}</td>
+              <td style="font-size:12px;color:var(--muted);">${escapeHtml(expText)}</td>
+              <td><strong>${u.xpTotal || u.pointsRuta || 0} XP</strong></td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn-blue btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 7)">+7d</button>
+                <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 30)">+30d</button>
+                <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 90)">+90d</button>
+                <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 365)">+1 año</button>
+                <button class="btn btn-green btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 0)">∞ Ilim.</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.__adminAction('revokePro','${escapeHtml(u.id)}')">Revocar</button>
+              </td>
+            </tr>
+          `;
+        }).join("");
+    }
+
     function renderUsers() {
       const q = $("filter-users").value.trim().toLowerCase();
       const now = Date.now();
@@ -797,8 +939,9 @@
       $("tbody-users").innerHTML = rows.length === 0
         ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:24px;">No hay usuarios que coincidan.</td></tr>`
         : rows.map((u) => {
-          const proActive = u.isProUser && (!u.proExpiresAtMillis || u.proExpiresAtMillis > now);
-          const daysLeft = u.proExpiresAtMillis > now ? Math.ceil((u.proExpiresAtMillis - now) / 86400000) : 0;
+          const exp = Number(u.proExpiresAtMillis || 0);
+          const proActive = u.isProUser && (exp === 0 || exp > now);
+          const daysLeft = exp > now ? Math.ceil((exp - now) / 86400000) : 0;
           return `
             <tr>
               <td>
@@ -810,13 +953,14 @@
                 <span style="color:var(--muted);font-size:12px;">${escapeHtml(u.defaultVehicle || "")} ${escapeHtml(u.defaultPlate || "")}</span>
               </td>
               <td>
-                ${proActive ? `<span class="tag tag-amber">🌟 PRO (${daysLeft > 0 ? `${daysLeft}d` : "Ilimitado"})</span>` : `<span class="tag tag-slate">📱 Freemium</span>`}
+                ${proActive ? `<span class="tag tag-amber">🌟 PRO (${exp === 0 ? "∞ Ilimitado" : `${daysLeft}d`})</span>` : `<span class="tag tag-slate">📱 Freemium</span>`}
                 ${u.isBetaTester ? `<br><span class="tag tag-blue" style="margin-top:4px;">🧪 BETA TESTER</span>` : ""}
               </td>
               <td><strong>${u.xpTotal || u.pointsRuta || 0} XP</strong><br><span style="color:var(--muted);font-size:11px;">${u.pointsRuta || 0} pts canjeables</span></td>
               <td style="white-space:nowrap;">
                 <button class="btn ${u.isBetaTester ? "btn-blue" : "btn-ghost"} btn-sm" onclick="window.__adminAction('toggleBeta','${escapeHtml(u.id)}', ${!u.isBetaTester})">${u.isBetaTester ? "Quitar Beta" : "🧪 Activar Beta"}</button>
                 <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 30)">+30d PRO</button>
+                <button class="btn btn-green btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 0)">∞ Ilim.</button>
                 <button class="btn btn-ghost btn-sm" onclick="window.__adminAction('revokePro','${escapeHtml(u.id)}')">Freemium</button>
                 <button class="btn btn-blue btn-sm" onclick="window.__adminAction('toggleDni','${escapeHtml(u.id)}', ${!u.isDniVerified})">${u.isDniVerified ? "Quitar DNI" : "Verificar DNI"}</button>
               </td>
@@ -826,12 +970,12 @@
     }
 
     const FEATURE_DEFS = [
-      { key: "aventonMode", name: "🚗 Aventón Seguro", desc: "Pestaña Aventón y marcadores de pasajeros esperando en ruta" },
-      { key: "baulVialMode", name: "🧳 Baúl Vial", desc: "Objetos encontrados/perdidos y reclamos verificados" },
-      { key: "reclamosMode", name: "📄 Reclamos Oficiales", desc: "Notas formales de reclamo por deterioro de ruta" },
-      { key: "proConversionMode", name: "⭐ Conversión PRO / Mercado Pago", desc: "Diálogo post-viaje e hitos para pasar a PRO" },
-      { key: "referralsMode", name: "🎁 Referidos (VIA-XXXXXX)", desc: "Tarjetas de invitación con +150 XP y +7 días PRO" },
-      { key: "preTripChecklistMode", name: "✅ Chequeo Pre-Viaje por Voz", desc: "Recordatorio breve de seguridad al iniciar navegación" }
+      { key: "aventonMode", name: "🚗 Aventón Seguro (Barra inferior)", desc: "Botón en barra inferior derecha + marcadores de pasajeros en ruta" },
+      { key: "baulVialMode", name: "🧳 Baúl Vial (Barra inferior)", desc: "Botón en barra inferior izquierda (objetos encontrados/perdidos)" },
+      { key: "reclamosMode", name: "📄 Reclamos Oficiales (Barra inferior)", desc: "Botón en barra inferior derecha (notas por deterioro ante vialidad)" },
+      { key: "proConversionMode", name: "⭐ Conversión PRO (Cartel en Mapa)", desc: "Sin pestaña propia: dispara cartel post-viaje e hitos para pasar a PRO" },
+      { key: "referralsMode", name: "🎁 Referidos VIA-XXXXXX (En Perfil)", desc: "Aparece dentro de la pestaña Perfil (invitaciones con +150 XP y +7 días PRO)" },
+      { key: "preTripChecklistMode", name: "✅ Chequeo Pre-Viaje (Voz y Perfil)", desc: "Se escucha al iniciar ruta y su interruptor aparece dentro de Perfil" }
     ];
 
     function renderFeatures() {
@@ -913,6 +1057,7 @@
       renderKpis();
       renderAlerts();
       renderDrivers();
+      renderLicenses();
       renderUsers();
       renderFeatures();
       renderBaul();
@@ -922,8 +1067,46 @@
 
     $("filter-alerts").addEventListener("input", renderAlerts);
     $("filter-alert-status").addEventListener("change", renderAlerts);
+    $("filter-licenses-q")?.addEventListener("input", renderLicenses);
+    $("filter-licenses-status")?.addEventListener("change", renderLicenses);
     $("filter-users").addEventListener("input", renderUsers);
     $("filter-baul-type").addEventListener("change", renderBaul);
+
+    $("btn-demo-beta-all")?.addEventListener("click", async () => {
+      try {
+        const nextPayload = {
+          aventonMode: state.features.aventonMode === "hidden" ? "beta" : (state.features.aventonMode || "beta"),
+          baulVialMode: state.features.baulVialMode === "hidden" ? "beta" : (state.features.baulVialMode || "beta"),
+          reclamosMode: state.features.reclamosMode === "hidden" ? "beta" : (state.features.reclamosMode || "beta"),
+          proConversionMode: state.features.proConversionMode === "hidden" ? "beta" : (state.features.proConversionMode || "beta"),
+          referralsMode: state.features.referralsMode === "hidden" ? "beta" : (state.features.referralsMode || "beta"),
+          preTripChecklistMode: state.features.preTripChecklistMode === "hidden" ? "beta" : (state.features.preTripChecklistMode || "beta"),
+          updatedAt: serverTimestamp()
+        };
+        await setDoc(doc(db, "app_config", "features"), nextPayload, { merge: true });
+        showToast("🎭 Módulos ocultos pasados a BETA: ya los ves en tu celular para mostrar a clientes.");
+      } catch (e) {
+        showToast(`⚠️ Error aplicando modo demo: ${e.message}`);
+      }
+    });
+
+    $("btn-public-all")?.addEventListener("click", async () => {
+      if (!confirm("¿Seguro que querés habilitar TODOS los módulos como PÚBLICOS para todos los usuarios?")) return;
+      try {
+        await setDoc(doc(db, "app_config", "features"), {
+          aventonMode: "public",
+          baulVialMode: "public",
+          reclamosMode: "public",
+          proConversionMode: "public",
+          referralsMode: "public",
+          preTripChecklistMode: "public",
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        showToast("🌍 Todos los módulos pasaron a estado PÚBLICO.");
+      } catch (e) {
+        showToast(`⚠️ Error: ${e.message}`);
+      }
+    });
 
     $("btn-clean-tests").addEventListener("click", async () => {
       const testAlerts = state.alerts.filter((a) =>
@@ -996,9 +1179,10 @@
           await updateDoc(doc(db, "users", arg1), { isBetaTester: Boolean(arg2), updatedAt: serverTimestamp() });
           showToast(arg2 ? "🧪 Usuario habilitado como Beta Tester" : "Acceso Beta removido al usuario");
         } else if (action === "grantPro") {
-          const expiry = Date.now() + Number(arg2 || 30) * 86400000;
+          const days = Number(arg2);
+          const expiry = days === 0 ? 0 : (Date.now() + (days || 30) * 86400000);
           await updateDoc(doc(db, "users", arg1), { isProUser: true, proExpiresAtMillis: expiry, updatedAt: serverTimestamp() });
-          showToast(`🌟 PRO activado por ${arg2} días`);
+          showToast(days === 0 ? "∞ Licencia PRO Ilimitada activada" : `🌟 Licencia PRO activada por ${days} días`);
         } else if (action === "revokePro") {
           await updateDoc(doc(db, "users", arg1), { isProUser: false, proExpiresAtMillis: Date.now() - 1000, updatedAt: serverTimestamp() });
           showToast("📱 Usuario pasado a plan Freemium");

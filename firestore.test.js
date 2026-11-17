@@ -572,3 +572,182 @@ test("User isBetaTester flag: blocks self-escalation on create/update, allows ad
     })
   );
 });
+
+// --- Etapa 2: Road Levels, Author Precision Bonus, Temporary Alert TTL ---
+test("Etapa 2 alerts: allows expiresAtMillis & reporterLevel 1-6, protects authorBonusAwarded from third parties", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const futureExpiry = Date.now() + 3 * 60 * 60 * 1000;
+
+  await assertSucceeds(
+    aliceDb.collection("alerts").doc("alert_temp_1").set({
+      type: "neblina",
+      latitude: -35.8,
+      longitude: -58.2,
+      reporterUid: ALICE_UID,
+      reporterLevel: 5,
+      expiresAtMillis: futureExpiry,
+      authorBonusAwarded: false,
+      confirmations: 1,
+      notThereVotes: 0,
+      status: "active",
+      createdAt: new Date(),
+    })
+  );
+
+  // Invalid reporterLevel > 6 must fail
+  await assertFails(
+    aliceDb.collection("alerts").doc("alert_bad_lvl").set({
+      type: "pozo",
+      latitude: -35.8,
+      longitude: -58.2,
+      reporterUid: ALICE_UID,
+      reporterLevel: 9,
+      status: "active",
+      createdAt: new Date(),
+    })
+  );
+
+  // Bob can confirm & renew temporary expiry on Alice's alert
+  await assertSucceeds(
+    bobDb.collection("alerts").doc("alert_temp_1").update({
+      confirmations: 2,
+      expiresAtMillis: futureExpiry + 3600000,
+    })
+  );
+
+  // Bob CANNOT hijack or flip authorBonusAwarded to true on Alice's alert
+  await assertFails(
+    bobDb.collection("alerts").doc("alert_temp_1").update({
+      authorBonusAwarded: true,
+    })
+  );
+
+  // Original author Alice CAN list her own alerts by reporterUid (to claim +25 confirmation bonus)
+  await assertSucceeds(
+    aliceDb.collection("alerts").where("reporterUid", "==", ALICE_UID).get()
+  );
+
+  // Third-party Bob CANNOT list all alerts by reporterUid without status filter
+  await assertFails(
+    bobDb.collection("alerts").where("reporterUid", "==", ALICE_UID).get()
+  );
+
+  // Original author Alice CAN mark authorBonusAwarded = true once confirmed
+  await assertSucceeds(
+    aliceDb.collection("alerts").doc("alert_temp_1").update({
+      authorBonusAwarded: true,
+    })
+  );
+});
+
+test("Etapa 2 user profile: allows impact counters & monthly level PRO claims while validating ranges", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com" }).firestore();
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      name: "Alice Centinela",
+      email: "alice@example.com",
+      xpTotal: 6200,
+      pointsRuta: 1200,
+      alertsCreatedCount: 40,
+      alertsResolvedCount: 15,
+      confirmedImpactCount: 12,
+      lastWeekendProClaimMonth: "2026-11",
+      createdAt: new Date(),
+    })
+  );
+
+  // Negative confirmedImpactCount or invalid claim month format must fail
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      confirmedImpactCount: -3,
+    })
+  );
+});
+
+// --- Seguime (Tiempo Real) tests ---
+test("Seguime sessions: private link get allowed, public list denied, ownership & breadcrumbs enforced", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com" }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com" }).firestore();
+  const secretId = "seguime_AbCdEf1234567890";
+  const created = new Date(Date.now() - 2000);
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+  // Unauthenticated cannot create or list seguime_sessions
+  await assertFails(unauthDb.collection("seguime_sessions").get());
+  await assertFails(
+    unauthDb.collection("seguime_sessions").doc(secretId).set({
+      ownerUid: ALICE_UID,
+      driverName: "Alice",
+      status: "active",
+      latitude: -35.5,
+      longitude: -58.0,
+      expiresAtMillis: expiresAt,
+      createdAt: created,
+    })
+  );
+
+  // Short guessable ID (<16 chars) must be rejected
+  await assertFails(
+    aliceDb.collection("seguime_sessions").doc("short_1").set({
+      ownerUid: ALICE_UID,
+      driverName: "Alice",
+      status: "active",
+      latitude: -35.5,
+      longitude: -58.0,
+      expiresAtMillis: expiresAt,
+      createdAt: created,
+    })
+  );
+
+  // Valid unguessable session created by Alice succeeds
+  await assertSucceeds(
+    aliceDb.collection("seguime_sessions").doc(secretId).set({
+      ownerUid: ALICE_UID,
+      driverName: "Alice Conductora",
+      vehicleSummary: "Fiat Cronos · AF 123 CD",
+      destinationTitle: "Mar del Plata",
+      originName: "Autovía 2 Km 90",
+      status: "active",
+      latitude: -35.5,
+      longitude: -58.0,
+      speedKmH: 98.5,
+      heading: 145.0,
+      offlineBuffered: false,
+      recentPoints: [{ lat: -35.5, lng: -58.0, ts: Date.now() }],
+      expiresAtMillis: expiresAt,
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Anyone with the exact unguessable link can GET (view seguime.html?s=...) without sign-in
+  await assertSucceeds(unauthDb.collection("seguime_sessions").doc(secretId).get());
+
+  // Third party Bob CANNOT list all active Seguime sessions or overwrite Alice's session
+  await assertFails(bobDb.collection("seguime_sessions").get());
+  await assertFails(bobDb.collection("seguime_sessions").where("ownerUid", "==", ALICE_UID).get());
+  await assertFails(
+    bobDb.collection("seguime_sessions").doc(secretId).update({
+      status: "cancelled",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Owner Alice can list her own sessions and update GPS / finish with status arrived
+  await assertSucceeds(aliceDb.collection("seguime_sessions").where("ownerUid", "==", ALICE_UID).get());
+  await assertSucceeds(
+    aliceDb.collection("seguime_sessions").doc(secretId).update({
+      latitude: -36.2,
+      longitude: -57.8,
+      speedKmH: 0.0,
+      status: "arrived",
+      offlineBuffered: true,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+});
+
+

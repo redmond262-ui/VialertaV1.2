@@ -27,8 +27,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAlert
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Directions
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -67,6 +70,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +90,7 @@ import com.example.data.model.HitchhikeRequest
 import com.example.data.model.RoadAlert
 import com.example.data.model.UserProfile
 import com.example.data.repository.RoadAlertRepository
+import com.example.data.repository.SeguimeRepository
 import com.example.data.repository.SosRepository
 import com.example.data.repository.UserRepository
 import com.example.ui.components.HazardDetailBottomSheet
@@ -104,6 +109,7 @@ import com.example.ui.theme.Slate900
 import com.example.ui.theme.Slate950
 import com.example.util.DriverPreferences
 import com.example.util.LocationRadarManager
+import com.example.util.OfflineAlertQueue
 import com.example.util.RoadRoutingManager
 import com.example.util.ViaAlertaRadarHolder
 import com.example.util.VoiceCopilotManager
@@ -218,6 +224,137 @@ fun MapScreen(
     var pendingPostTripHazards by remember { mutableIntStateOf(0) }
     var activeProTrigger by remember { mutableStateOf<ProConversionTrigger?>(null) }
 
+    // Offline alerts queue & Seguime (live family sharing) state
+    val seguimeRepo = remember { SeguimeRepository(context) }
+    var activeSeguimeSessionId by remember {
+        mutableStateOf(if (isGuestMode) null else seguimeRepo.getActiveSessionId())
+    }
+    var showSeguimeManageDialog by remember { mutableStateOf(false) }
+    var isStartingSeguime by remember { mutableStateOf(false) }
+    var pendingOfflineCount by remember { mutableIntStateOf(OfflineAlertQueue.count(context)) }
+
+    LaunchedEffect(activeAlerts) {
+        pendingOfflineCount = OfflineAlertQueue.count(context)
+        if (!isGuestMode) {
+            activeSeguimeSessionId = seguimeRepo.getActiveSessionId()
+        }
+    }
+
+    fun shareSeguimeLink(sessionId: String) {
+        val url = SeguimeRepository.buildSeguimeUrl(sessionId)
+        val vehicleSummary = listOfNotNull(
+            userProfile?.defaultVehicle?.takeIf { it.isNotBlank() },
+            userProfile?.defaultPlate?.takeIf { it.isNotBlank() }?.let { "($it)" }
+        ).joinToString(" ")
+        val message = SeguimeRepository.buildWhatsAppShareMessage(
+            driverName = userProfile?.name?.ifBlank { null } ?: currentUserName,
+            vehicleSummary = vehicleSummary,
+            destinationTitle = selectedDestination?.title ?: "",
+            liveUrl = url
+        )
+        try {
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, message)
+            }
+            val chooser = Intent.createChooser(sendIntent, "Compartir Seguime por WhatsApp o mensaje")
+            context.startActivity(chooser)
+        } catch (t: Throwable) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("No se pudo abrir el menú para compartir: ${t.message}")
+            }
+        }
+    }
+
+    fun triggerStartOrManageSeguime() {
+        if (isGuestMode) {
+            showGuestUpgradeDialog = true
+            return
+        }
+        val currentId = activeSeguimeSessionId
+        if (currentId != null) {
+            showSeguimeManageDialog = true
+            return
+        }
+        if (isStartingSeguime) return
+        isStartingSeguime = true
+        coroutineScope.launch {
+            val vehicleSummary = listOfNotNull(
+                userProfile?.defaultVehicle?.takeIf { it.isNotBlank() },
+                userProfile?.defaultPlate?.takeIf { it.isNotBlank() }?.let { "($it)" }
+            ).joinToString(" ")
+            val res = seguimeRepo.startOrReuseSession(
+                driverName = userProfile?.name?.ifBlank { null } ?: currentUserName,
+                vehicleSummary = vehicleSummary,
+                destinationTitle = selectedDestination?.title ?: "",
+                originName = driverLocation.routeName,
+                latitude = driverLocation.latitude,
+                longitude = driverLocation.longitude,
+                speedKmH = driverLocation.speedKmH,
+                heading = driverLocation.heading
+            )
+            isStartingSeguime = false
+            if (res.isSuccess) {
+                val newId = res.getOrNull()!!
+                activeSeguimeSessionId = newId
+                shareSeguimeLink(newId)
+                val offlineNote = if (seguimeRepo.hasPendingOfflineSync()) {
+                    " (sin señal: actualizará al volver 4G)"
+                } else ""
+                snackbarHostState.showSnackbar("📍 Seguime activado$offlineNote")
+            } else {
+                snackbarHostState.showSnackbar(res.exceptionOrNull()?.message ?: "No se pudo activar Seguime")
+            }
+        }
+    }
+
+    // Periodic Seguime GPS telemetry push (throttled in SeguimeRepository to >=12s)
+    LaunchedEffect(activeSeguimeSessionId, isGuestMode) {
+        val sId = activeSeguimeSessionId ?: return@LaunchedEffect
+        if (isGuestMode) return@LaunchedEffect
+        while (true) {
+            val loc = locationRadarManager.currentLocation.value
+            seguimeRepo.updateSessionMetadataOrLocation(
+                sessionId = sId,
+                latitude = loc.latitude,
+                longitude = loc.longitude,
+                speedKmH = loc.speedKmH,
+                heading = loc.heading,
+                destinationTitle = selectedDestination?.title
+            )
+            delay(12_000L)
+        }
+    }
+
+    // Voice copilot "¿Cuánto falta?" live ETA/distance query handler
+    val latestRemainingQuery = rememberUpdatedState<() -> String?> {
+        val dest = selectedDestination
+        if (dest == null) {
+            "No tenés un destino cargado en el mapa en este momento."
+        } else {
+            val paceAdjustedSeconds = RoadRoutingManager.adjustDurationForMovingPace(
+                baseDurationSeconds = destinationDurationSeconds,
+                routeDistanceMeters = destinationRoadDistanceMeters,
+                smoothedMovingSpeedKmH = if (isRouteActive) smoothedMovingSpeedKmH else 0f
+            )
+            val (arrivalTime, durationText) = RoadRoutingManager.calculateFormattedETA(
+                durationSeconds = paceAdjustedSeconds,
+                extraIncidentDelaySeconds = incidentDelaySeconds,
+                nowMillis = System.currentTimeMillis()
+            )
+            val distText = if (destinationRoadDistanceMeters > 0) {
+                LocationRadarManager.formatDisplayDistance(destinationRoadDistanceMeters)
+            } else "distancia en cálculo"
+            "Para llegar a ${dest.title} faltan $distText, aproximadamente $durationText. Hora estimada de llegada $arrivalTime."
+        }
+    }
+    DisposableEffect(voiceCopilotManager) {
+        voiceCopilotManager.onRemainingDistanceQuery = { latestRemainingQuery.value.invoke() }
+        onDispose {
+            voiceCopilotManager.onRemainingDistanceQuery = null
+        }
+    }
+
     // Notify MainActivity when active turn-by-turn navigation hides/shows global top bar
     LaunchedEffect(isRouteActive) {
         onNavigationActiveChanged(isRouteActive)
@@ -231,6 +368,7 @@ fun MapScreen(
         while (true) {
             liveClockMillis = System.currentTimeMillis()
             nightModePref = DriverPreferences.getNightModePreference(context)
+            pendingOfflineCount = OfflineAlertQueue.count(context)
             delay(15_000L)
         }
     }
@@ -392,6 +530,17 @@ fun MapScreen(
                     }
                 }
                 voiceCopilotManager.speak("Has llegado a tu destino, ${dest.title}. Buen viaje.", isWarning = false)
+                activeSeguimeSessionId?.let { sId ->
+                    activeSeguimeSessionId = null
+                    coroutineScope.launch {
+                        seguimeRepo.finishSession(
+                            sessionId = sId,
+                            status = "arrived",
+                            latitude = driverLocation.latitude,
+                            longitude = driverLocation.longitude
+                        )
+                    }
+                }
                 selectedDestination = null
                 routePolyline = emptyList()
                 routeOptions = emptyList()
@@ -576,7 +725,12 @@ fun MapScreen(
                     if (!createdId.isNullOrBlank()) {
                         voiceCopilotManager.registerRecentAlertForVoiceUndo(createdId, commandName)
                     }
-                    snackbarHostState.showSnackbar("🚨 $commandName publicado en tu posición")
+                    pendingOfflineCount = OfflineAlertQueue.count(context)
+                    val isOffline = createdId?.startsWith(RoadAlertRepository.OFFLINE_QUEUED_PREFIX) == true
+                    snackbarHostState.showSnackbar(
+                        if (isOffline) "📴 Sin señal: $commandName en cola offline. Subirá al volver 4G."
+                        else "🚨 $commandName publicado en tu posición"
+                    )
                 } else {
                     snackbarHostState.showSnackbar(result.exceptionOrNull()?.message ?: "No se pudo publicar")
                 }
@@ -844,6 +998,23 @@ fun MapScreen(
                     }
                 }
 
+                if (pendingOfflineCount > 0) {
+                    Surface(
+                        color = Slate950.copy(alpha = 0.92f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Amber400.copy(alpha = 0.8f)),
+                        modifier = Modifier.padding(top = 6.dp).testTag("offline_queue_pill")
+                    ) {
+                        Text(
+                            text = "📴 $pendingOfflineCount reporte(s) en cola offline • Subirá al volver 4G",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Amber400,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+
                 // Destination Navigation Card: Slim single pill when active, 3-route comparison card in preview
                 selectedDestination?.let { dest ->
                     val paceAdjustedSeconds = RoadRoutingManager.adjustDurationForMovingPace(
@@ -902,6 +1073,30 @@ fun MapScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
+                                    if (!isGuestMode) {
+                                        Surface(
+                                            color = if (activeSeguimeSessionId != null) SafetyGreen500.copy(alpha = 0.25f) else Slate800,
+                                            shape = CircleShape,
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (activeSeguimeSessionId != null) SafetyGreen500 else Slate700
+                                            ),
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clickable { triggerStartOrManageSeguime() }
+                                                .testTag("nav_seguime_btn")
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Share,
+                                                    contentDescription = "Compartir recorrido Seguime",
+                                                    tint = if (activeSeguimeSessionId != null) SafetyGreen500 else Color(0xFF38BDF8),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
                                     // Night glare toggle right inside nav pill
                                     Surface(
                                         color = Slate800,
@@ -943,6 +1138,16 @@ fun MapScreen(
                                         modifier = Modifier
                                             .clickable {
                                                 isRouteActive = false
+                                                val closingSeguimeId = activeSeguimeSessionId
+                                                if (closingSeguimeId != null) {
+                                                    activeSeguimeSessionId = null
+                                                    coroutineScope.launch {
+                                                        seguimeRepo.finishSession(
+                                                            sessionId = closingSeguimeId,
+                                                            status = "cancelled"
+                                                        )
+                                                    }
+                                                }
                                                 if (tripStartAvoidedCount >= 0) {
                                                     val avoidedInTrip = (DriverPreferences.getAvoidedHazardsTotal(context) - tripStartAvoidedCount).coerceAtLeast(0)
                                                     tripStartAvoidedCount = -1
@@ -950,7 +1155,11 @@ fun MapScreen(
                                                         pendingPostTripHazards = avoidedInTrip
                                                     }
                                                 }
-                                                voiceCopilotManager.speak("Navegación detenida.", isWarning = false)
+                                                voiceCopilotManager.speak(
+                                                    if (closingSeguimeId != null) "Navegación detenida. Enlace Seguime cerrado por privacidad."
+                                                    else "Navegación detenida.",
+                                                    isWarning = false
+                                                )
                                             }
                                             .testTag("stop_nav_pill_btn")
                                     ) {
@@ -1123,6 +1332,15 @@ fun MapScreen(
                                                     queueIfSpeaking = true
                                                 )
                                             }
+                                            if (!isGuestMode && DriverPreferences.isAutoHandsFreeOnTripEnabled(context)) {
+                                                val hasAudioPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                                    context,
+                                                    android.Manifest.permission.RECORD_AUDIO
+                                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                                if (hasAudioPerm && !isHandsFreeLoop) {
+                                                    voiceCopilotManager.setHandsFreeLoopEnabled(true, announce = false)
+                                                }
+                                            }
                                         },
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = Color(0xFF10B981),
@@ -1145,10 +1363,10 @@ fun MapScreen(
 
                                     OutlinedButton(
                                         onClick = { fitRouteTrigger++ },
-                                        contentPadding = PaddingValues(horizontal = 12.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp),
                                         shape = RoundedCornerShape(10.dp),
                                         border = BorderStroke(1.dp, Slate700),
-                                        modifier = Modifier.heightIn(min = 42.dp)
+                                        modifier = Modifier.heightIn(min = 48.dp)
                                     ) {
                                         Text(
                                             text = "Ver Ruta",
@@ -1157,6 +1375,35 @@ fun MapScreen(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                    }
+
+                                    if (!isGuestMode) {
+                                        OutlinedButton(
+                                            onClick = { triggerStartOrManageSeguime() },
+                                            contentPadding = PaddingValues(horizontal = 10.dp),
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (activeSeguimeSessionId != null) SafetyGreen500 else Color(0xFF38BDF8)
+                                            ),
+                                            modifier = Modifier.heightIn(min = 48.dp).testTag("dest_seguime_btn")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Share,
+                                                contentDescription = "Compartir Seguime en vivo",
+                                                tint = if (activeSeguimeSessionId != null) SafetyGreen500 else Color(0xFF38BDF8),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (activeSeguimeSessionId != null) "Seguime ON" else "Seguime",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (activeSeguimeSessionId != null) SafetyGreen500 else Color(0xFF38BDF8),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
                                 }
 
@@ -1234,7 +1481,7 @@ fun MapScreen(
             }
         }
 
-        // Direct In-Map Hands-Free Voice Mic + Continuous Toggle above Speedometer (zero tab switching!)
+        // Direct In-Map Hands-Free Voice Mic + Continuous Toggle + Seguime above Speedometer
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -1244,6 +1491,41 @@ fun MapScreen(
             horizontalAlignment = Alignment.Start
         ) {
             if (!isGuestMode) {
+                Surface(
+                    color = if (activeSeguimeSessionId != null) SafetyGreen500.copy(alpha = 0.25f) else Slate900.copy(alpha = 0.92f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(
+                        1.5.dp,
+                        if (activeSeguimeSessionId != null) SafetyGreen500 else Color(0xFF38BDF8)
+                    ),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clickable { triggerStartOrManageSeguime() }
+                        .testTag("map_seguime_btn")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Compartir viaje en tiempo real (Seguime)",
+                            tint = if (activeSeguimeSessionId != null) SafetyGreen500 else Color(0xFF38BDF8),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (activeSeguimeSessionId != null) "Seguime ON" else "Seguime",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (activeSeguimeSessionId != null) SafetyGreen500 else Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
                 Surface(
                     color = if (isVoiceListening) Amber500 else Slate900.copy(alpha = 0.94f),
                     shape = CircleShape,
@@ -1278,7 +1560,14 @@ fun MapScreen(
                         .clickable {
                             val target = !isHandsFreeLoop
                             if (target) {
-                                onRequestVoiceListening()
+                                val hasAudioPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    android.Manifest.permission.RECORD_AUDIO
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                if (!hasAudioPerm) {
+                                    onRequestVoiceListening()
+                                    return@clickable
+                                }
                             }
                             voiceCopilotManager.setHandsFreeLoopEnabled(target)
                         }
@@ -1391,11 +1680,12 @@ fun MapScreen(
                             alertId = alert.id,
                             currentConfirmations = alert.confirmations,
                             reporterUid = alert.reporterUid,
-                            alertCreatedMillis = createdMs
+                            alertCreatedMillis = createdMs,
+                            alertType = alert.type
                         )
                         selectedAlert = null
                         if (res.isSuccess) {
-                            snackbarHostState.showSnackbar("¡Gracias! Confirmación registrada (+15 pts)")
+                            snackbarHostState.showSnackbar("¡Gracias! Confirmación registrada (+15 XP/pts)")
                         } else {
                             snackbarHostState.showSnackbar(res.exceptionOrNull()?.message ?: "Enfriamiento de 4 hs activo para esta alerta.")
                         }
@@ -1403,14 +1693,29 @@ fun MapScreen(
                 },
                 onResolveHazard = {
                     coroutineScope.launch {
-                        roadAlertRepository.resolveAlert(alert.id)
+                        val userXp = kotlin.math.max(userProfile?.xpTotal ?: 0, userProfile?.pointsRuta ?: 0)
+                        val levelSpec = com.example.data.model.RoadLevels.forXp(userXp)
+                        val res = roadAlertRepository.reportAlertNotThere(
+                            alertId = alert.id,
+                            currentNotThereVotes = alert.notThereVotes,
+                            currentConfirmations = alert.confirmations,
+                            voteWeight = levelSpec.resolveVoteWeight,
+                            forceOwnerResolve = isUserOwner
+                        )
                         selectedAlert = null
-                        snackbarHostState.showSnackbar("Alerta retirada del mapa.")
+                        val resolvedNow = res.getOrDefault(false)
+                        if (resolvedNow) {
+                            snackbarHostState.showSnackbar("✅ ¡Alerta retirada del mapa! (+20 XP/pts por limpiar ruta)")
+                        } else {
+                            val weightNote = if (levelSpec.resolveVoteWeight > 1) " (voto doble Nivel ${levelSpec.level})" else ""
+                            snackbarHostState.showSnackbar("👍 Voto de solución registrado$weightNote • +20 XP/pts")
+                        }
                     }
                 },
                 onDeleteHazard = {
                     coroutineScope.launch {
                         roadAlertRepository.deleteAlert(alert.id)
+                        pendingOfflineCount = OfflineAlertQueue.count(context)
                         selectedAlert = null
                         snackbarHostState.showSnackbar("🗑️ Reporte eliminado definitivamente.")
                     }
@@ -1493,10 +1798,117 @@ fun MapScreen(
                             if (!createdId.isNullOrBlank()) {
                                 voiceCopilotManager.registerRecentAlertForVoiceUndo(createdId, type)
                             }
-                            snackbarHostState.showSnackbar("🚨 ¡Peligro publicado en el punto exacto!")
+                            pendingOfflineCount = OfflineAlertQueue.count(context)
+                            val isOffline = createdId?.startsWith(RoadAlertRepository.OFFLINE_QUEUED_PREFIX) == true
+                            snackbarHostState.showSnackbar(
+                                if (isOffline) "📴 Sin señal: guardada en cola offline. Subirá al volver 4G."
+                                else "🚨 ¡Peligro publicado en el punto exacto!"
+                            )
                         } else {
                             snackbarHostState.showSnackbar(result.exceptionOrNull()?.message ?: "Error al guardar la alerta.")
                         }
+                    }
+                }
+            )
+        }
+
+        if (showSeguimeManageDialog && activeSeguimeSessionId != null) {
+            val activeSessionId = activeSeguimeSessionId!!
+            AlertDialog(
+                onDismissRequest = { showSeguimeManageDialog = false },
+                containerColor = Slate900,
+                titleContentColor = Color(0xFF38BDF8),
+                textContentColor = Color.White.copy(alpha = 0.88f),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null,
+                        tint = SafetyGreen500,
+                        modifier = Modifier.size(32.dp)
+                    )
+                },
+                title = {
+                    Text(
+                        text = "📍 Seguime en Vivo Activo",
+                        fontWeight = FontWeight.Black
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Tu familia o contacto de confianza puede ver tu recorrido en tiempo real desde el enlace privado." +
+                                (selectedDestination?.title?.let { "\n\n🎯 Destino: $it" } ?: "") +
+                                "\n\n📡 En tramos rurales sin señal, el enlace muestra tu última posición GPS y actualiza al volver cobertura 4G.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.85f)
+                        )
+                        Button(
+                            onClick = {
+                                showSeguimeManageDialog = false
+                                shareSeguimeLink(activeSessionId)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF38BDF8),
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("seguime_reshare_btn")
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Reenviar Link por WhatsApp", fontWeight = FontWeight.Black)
+                        }
+                        Button(
+                            onClick = {
+                                showSeguimeManageDialog = false
+                                activeSeguimeSessionId = null
+                                coroutineScope.launch {
+                                    seguimeRepo.finishSession(
+                                        sessionId = activeSessionId,
+                                        status = "arrived",
+                                        latitude = driverLocation.latitude,
+                                        longitude = driverLocation.longitude
+                                    )
+                                    voiceCopilotManager.speak("Seguime finalizado. ¡Qué bueno que llegaste bien!", isWarning = false)
+                                    snackbarHostState.showSnackbar("✅ ¡Llegaste bien! Enlace cerrado.")
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SafetyGreen500,
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("seguime_arrived_btn")
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Marcar \"¡Llegué Bien!\"", fontWeight = FontWeight.Black)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSeguimeManageDialog = false }) {
+                        Text("Seguir viajando", color = Color.White.copy(alpha = 0.8f))
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showSeguimeManageDialog = false
+                            activeSeguimeSessionId = null
+                            coroutineScope.launch {
+                                seguimeRepo.finishSession(
+                                    sessionId = activeSessionId,
+                                    status = "cancelled",
+                                    latitude = driverLocation.latitude,
+                                    longitude = driverLocation.longitude
+                                )
+                                snackbarHostState.showSnackbar("⛔ Enlace Seguime cancelado.")
+                            }
+                        },
+                        modifier = Modifier.testTag("seguime_cancel_btn")
+                    ) {
+                        Text("Cancelar Enlace", color = AlertRed500, fontWeight = FontWeight.Bold)
                     }
                 }
             )
@@ -1509,12 +1921,24 @@ fun MapScreen(
                     Button(
                         onClick = {
                             showExitTripDialog = false
-                            try {
-                                com.example.util.RoadRadarForegroundService.stop(context)
-                                ViaAlertaRadarHolder.shutdown()
-                            } catch (_: Throwable) {}
-                            (context as? android.app.Activity)?.finishAffinity()
-                            java.lang.System.exit(0)
+                            val closingSeguimeId = activeSeguimeSessionId
+                            activeSeguimeSessionId = null
+                            coroutineScope.launch {
+                                if (closingSeguimeId != null) {
+                                    kotlinx.coroutines.withTimeoutOrNull(1800L) {
+                                        seguimeRepo.finishSession(
+                                            sessionId = closingSeguimeId,
+                                            status = "cancelled"
+                                        )
+                                    }
+                                }
+                                try {
+                                    com.example.util.RoadRadarForegroundService.stop(context)
+                                    ViaAlertaRadarHolder.shutdown()
+                                } catch (_: Throwable) {}
+                                (context as? android.app.Activity)?.finishAffinity()
+                                java.lang.System.exit(0)
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AlertRed500, contentColor = Color.White),
                         shape = RoundedCornerShape(10.dp)

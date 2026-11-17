@@ -297,6 +297,129 @@ class ViaAlertaRepositoryRuleTest : FirestoreEmulatorTestBase() {
     }
   }
 
+  @Test
+  fun redeemPointsForPro_appliesLevelDiscountAndNeverReducesXpTotal() = runBlocking {
+    val uid = signInTestUser("viaalerta_redeem_${System.currentTimeMillis()}@example.com")
+    val userRepo = UserRepository(firestore)
+    userRepo.grantWelcomeProTrialIfEligible(uid)
+
+    // Give driver Level 3 (1200 XP -> 10% discount) and 1200 redeemable points
+    firestore.collection("users").document(uid).update(
+      mapOf(
+        "xpTotal" to 1200,
+        "pointsRuta" to 1200
+      )
+    ).await()
+
+    val redeemRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      userRepo.redeemPointsForPro(uid, basePointsCost = 600, daysToGrant = 7)
+    }
+    assertTrue("Redemption should succeed: ${redeemRes.exceptionOrNull()}", redeemRes.isSuccess)
+    // 10% discount on 600 = 540 pts charged
+    assertEquals(540, redeemRes.getOrThrow())
+
+    val updated = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.getUserProfile(uid) }!!
+    assertEquals(660, updated.pointsRuta)
+    assertEquals("xpTotal must NEVER drop when redeeming points", 1200, updated.xpTotal)
+    assertTrue(updated.isProUser)
+  }
+
+  @Test
+  fun claimAuthorConfirmationBonuses_awards25XpPointsWhenAlertConfirmedByCommunity() = runBlocking {
+    val ts = System.currentTimeMillis()
+    val authorEmail = "viaalerta_author_$ts@example.com"
+    val confirmerEmail = "viaalerta_confirmer_$ts@example.com"
+    val authorUid = signInTestUser(authorEmail)
+    val userRepo = UserRepository(firestore)
+    val alertRepo = RoadAlertRepository(firestore, null)
+    userRepo.grantWelcomeProTrialIfEligible(authorUid)
+
+    val alertId = withTimeout(DEFAULT_TIMEOUT_MS) {
+      alertRepo.createAlert(
+        type = "pozo",
+        roadName = "Ruta 3 Km 95",
+        description = "Bache profundo",
+        latitude = -35.1,
+        longitude = -58.9,
+        reporterName = "Autor",
+        reporterLevel = 2
+      )
+    }.getOrThrow()
+
+    // Another driver confirms the alert -> confirmations becomes 2
+    signInTestUser(confirmerEmail)
+    val confirmRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      alertRepo.confirmAlert(
+        alertId = alertId,
+        currentConfirmations = 1,
+        reporterUid = authorUid,
+        alertCreatedMillis = 0L,
+        alertType = "pozo"
+      )
+    }
+    assertTrue(confirmRes.isSuccess)
+
+    // Author returns and claims +25 precision bonus
+    signInTestUser(authorEmail)
+    val bonusRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      alertRepo.claimAuthorConfirmationBonuses(authorUid)
+    }
+    assertTrue("Author bonus claim failed: ${bonusRes.exceptionOrNull()}", bonusRes.isSuccess)
+    assertEquals(1, bonusRes.getOrThrow())
+
+    val authorProfile = withTimeout(DEFAULT_TIMEOUT_MS) { userRepo.getUserProfile(authorUid) }!!
+    // 30 pts from createAlert + 25 pts author precision bonus = 55
+    assertEquals(55, authorProfile.pointsRuta)
+    assertEquals(55, authorProfile.xpTotal)
+    assertEquals(1, authorProfile.confirmedImpactCount)
+
+    // Re-claiming must grant 0 duplicates
+    val secondClaim = withTimeout(DEFAULT_TIMEOUT_MS) {
+      alertRepo.claimAuthorConfirmationBonuses(authorUid)
+    }
+    assertEquals(0, secondClaim.getOrThrow())
+  }
+
+  @Test
+  fun observeActiveAlerts_filtersOutExpiredTemporaryHazards() = runBlocking {
+    val uid = signInTestUser(TEST_USER_EMAIL)
+    val alertRepo = RoadAlertRepository(firestore, null)
+
+    val activeId = withTimeout(DEFAULT_TIMEOUT_MS) {
+      alertRepo.createAlert(
+        type = "neblina",
+        roadName = "Ruta 2 Km 80",
+        description = "Neblina reciente",
+        latitude = -35.4,
+        longitude = -58.1,
+        reporterName = "Tester"
+      )
+    }.getOrThrow()
+
+    // Seed an already-expired temporary fog alert
+    val expiredDoc = firestore.collection("alerts").document("expired_fog_test")
+    expiredDoc.set(
+      mapOf(
+        "type" to "neblina",
+        "roadName" to "Ruta 2 Km 50",
+        "latitude" to -35.2,
+        "longitude" to -58.1,
+        "reporterUid" to uid,
+        "status" to "active",
+        "expiresAtMillis" to (System.currentTimeMillis() - 60_000L),
+        "confirmations" to 1,
+        "notThereVotes" to 0,
+        "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+      )
+    ).await()
+
+    val observed = withTimeout(FLOW_TIMEOUT_MS) {
+      alertRepo.observeActiveAlerts().first { list -> list.any { it.id == activeId } }
+    }
+    assertTrue(observed.any { it.id == activeId })
+    assertTrue("Expired fog alert should be filtered out", observed.none { it.id == "expired_fog_test" })
+  }
+
   private companion object {
     const val TEST_USER_EMAIL = "viaalerta_tester@example.com"
     const val REFERRER_EMAIL = "viaalerta_referrer@example.com"

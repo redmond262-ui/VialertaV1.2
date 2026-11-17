@@ -2,7 +2,10 @@ package com.example
 
 import com.example.data.model.FeatureMode
 import com.example.data.model.RoadAlert
+import com.example.data.model.RoadLevels
 import com.example.data.repository.FeatureFlagsRepository
+import com.example.data.repository.RoadAlertRepository
+import com.example.data.repository.SeguimeRepository
 import com.example.data.repository.UserRepository
 import com.example.util.DriverLocation
 import com.example.util.DriverPreferences
@@ -270,6 +273,191 @@ class DriverLogicUnitTest {
         assertEquals(FeatureMode.PUBLIC, FeatureFlagsRepository.sanitizeMode("public"))
         assertEquals(FeatureMode.BETA, FeatureFlagsRepository.sanitizeMode("unknown_value"))
         assertEquals(FeatureMode.BETA, FeatureFlagsRepository.sanitizeMode(null))
+    }
+
+    @Test
+    fun roadLevels_mapsAllSixTiersAppliesDiscountsAndFormatsPioneerShare() {
+        assertEquals(1, RoadLevels.forXp(0).level)
+        assertEquals(2, RoadLevels.forXp(300).level)
+        assertEquals(3, RoadLevels.forXp(1000).level)
+        assertEquals(4, RoadLevels.forXp(2500).level)
+        assertEquals(5, RoadLevels.forXp(6000).level)
+        assertEquals(6, RoadLevels.forXp(15000).level)
+
+        // Level 1 (0% dto), Level 3 (10% dto), Level 5 (25% dto)
+        assertEquals(600, RoadLevels.discountedPointsCost(600, xpTotal = 150))
+        assertEquals(540, RoadLevels.discountedPointsCost(600, xpTotal = 1200))
+        assertEquals(450, RoadLevels.discountedPointsCost(600, xpTotal = 7000))
+
+        // Level 4+ gets double resolve vote weight, Level 5+ gets auto-beta
+        assertEquals(1, RoadLevels.forXp(1200).resolveVoteWeight)
+        assertEquals(2, RoadLevels.forXp(2600).resolveVoteWeight)
+        assertFalse(RoadLevels.forXp(2600).autoBetaAccess)
+        assertTrue(RoadLevels.forXp(6200).autoBetaAccess)
+        assertTrue(RoadLevels.forXp(16000).freeLegendProEligible)
+
+        // Progress & remaining XP
+        assertEquals(150, RoadLevels.xpRemainingForNextLevel(150))
+        assertEquals(0.5f, RoadLevels.progressToNextLevel(150), 0.01f)
+        assertEquals(0, RoadLevels.xpRemainingForNextLevel(20000))
+        assertEquals(1f, RoadLevels.progressToNextLevel(20000), 0.01f)
+
+        val share = RoadLevels.buildPioneerShareText(
+            driverName = "Juancho",
+            xpTotal = 2800,
+            alertsCreated = 25,
+            confirmedHelps = 18,
+            alertsResolved = 9,
+            referralCode = "VIA-JUAN12"
+        )
+        assertTrue(share.contains("Patrulla Comunitaria"))
+        assertTrue(share.contains("VIA-JUAN12"))
+        assertTrue(share.contains("25"))
+        assertTrue(share.contains("9"))
+    }
+
+    @Test
+    fun alertExpiration_distinguishesTemporaryVsStructuralHazards() {
+        val now = 1_760_000_000_000L
+
+        assertTrue(RoadAlertRepository.isTemporaryHazardType("neblina"))
+        assertTrue(RoadAlertRepository.isTemporaryHazardType("animales"))
+        assertTrue(RoadAlertRepository.isTemporaryHazardType("vehiculo_averiado"))
+        assertTrue(RoadAlertRepository.isTemporaryHazardType("agua"))
+        assertFalse(RoadAlertRepository.isTemporaryHazardType("pozo"))
+        assertFalse(RoadAlertRepository.isTemporaryHazardType("control_radar"))
+        assertFalse(RoadAlertRepository.isTemporaryHazardType("ruta_detonada"))
+
+        val fogExpiry = RoadAlertRepository.computeInitialExpiresAtMillis("neblina", now)
+        assertEquals(now + 3L * 60L * 60L * 1000L, fogExpiry)
+        assertEquals(0L, RoadAlertRepository.computeInitialExpiresAtMillis("pozo", now))
+
+        val activeFog = RoadAlert(id = "f1", type = "neblina", expiresAtMillis = now + 60_000L)
+        val expiredFog = RoadAlert(id = "f2", type = "neblina", expiresAtMillis = now - 1_000L)
+        val structuralPothole = RoadAlert(id = "p1", type = "pozo", expiresAtMillis = 0L)
+
+        assertFalse(RoadAlertRepository.isAlertExpired(activeFog, now))
+        assertTrue(RoadAlertRepository.isAlertExpired(expiredFog, now))
+        assertFalse(RoadAlertRepository.isAlertExpired(structuralPothole, now))
+    }
+
+    @Test
+    fun voiceConfirmations_handlePunctuationAndNaturalArgentineResponsesWithoutFalseNegation() {
+        assertEquals("si confirmo es real", VoiceCopilotManager.normalizeSpeech("¡Sí, confirmo! Es real."))
+
+        assertTrue(VoiceCopilotManager.isAffirmativeSpeechCommand(listOf("Ok, confirmo.")))
+        assertTrue(VoiceCopilotManager.isAffirmativeSpeechCommand(listOf("Sí, sigue ahí")))
+        assertTrue(VoiceCopilotManager.isAffirmativeSpeechCommand(listOf("dale confirmado")))
+        assertTrue(VoiceCopilotManager.isAffirmativeSpeechCommand(listOf("es real estaba en la mano")))
+        assertTrue(VoiceCopilotManager.isAffirmativeSpeechCommand(listOf("central")))
+
+        // Crucially, "confirmo" and "bueno" end in "no" and MUST NOT match isNegativeSpeechCommand!
+        assertFalse(VoiceCopilotManager.isNegativeSpeechCommand(listOf("confirmo")))
+        assertFalse(VoiceCopilotManager.isNegativeSpeechCommand(listOf("bueno")))
+        assertFalse(VoiceCopilotManager.isNegativeSpeechCommand(listOf("sí, sigue")))
+
+        assertTrue(VoiceCopilotManager.isNegativeSpeechCommand(listOf("No, ya no está")))
+        assertTrue(VoiceCopilotManager.isNegativeSpeechCommand(listOf("lo taparon")))
+        assertTrue(VoiceCopilotManager.isNegativeSpeechCommand(listOf("falsa alarma")))
+    }
+
+    @Test
+    fun antiFatigueEvaluator_triggersAtConfiguredIntervalCooldownsAndResetsAfterRest() {
+        val base = 1_760_000_000_000L
+        val oneMin = 60_000L
+
+        // Disabled (0 min) -> never triggers
+        val disabled = DriverPreferences.evaluateAntiFatigue(
+            intervalMinutes = 0,
+            speedKmH = 95f,
+            isRouteActive = true,
+            driveStartMs = base,
+            stationarySinceMs = 0L,
+            lastAlertMs = 0L,
+            nowMillis = base + 180 * oneMin
+        )
+        assertFalse(disabled.shouldAlert)
+
+        // Driving 125 min continuously with 120-min threshold -> triggers!
+        val triggered = DriverPreferences.evaluateAntiFatigue(
+            intervalMinutes = 120,
+            speedKmH = 90f,
+            isRouteActive = true,
+            driveStartMs = base,
+            stationarySinceMs = 0L,
+            lastAlertMs = 0L,
+            nowMillis = base + 125 * oneMin
+        )
+        assertTrue(triggered.shouldAlert)
+        assertEquals(125, triggered.continuousMinutes)
+        assertEquals(base + 125 * oneMin, triggered.nextLastAlertMs)
+
+        // 20 minutes later (< 45 min repeat cooldown) -> does not re-trigger yet
+        val cooldownBlocked = DriverPreferences.evaluateAntiFatigue(
+            intervalMinutes = 120,
+            speedKmH = 90f,
+            isRouteActive = true,
+            driveStartMs = triggered.nextDriveStartMs,
+            stationarySinceMs = 0L,
+            lastAlertMs = triggered.nextLastAlertMs,
+            nowMillis = base + 145 * oneMin
+        )
+        assertFalse(cooldownBlocked.shouldAlert)
+
+        // Resting stationary >= 12 minutes resets driving timer cleanly
+        val afterRest = DriverPreferences.evaluateAntiFatigue(
+            intervalMinutes = 120,
+            speedKmH = 0f,
+            isRouteActive = true,
+            driveStartMs = base,
+            stationarySinceMs = base + 126 * oneMin,
+            lastAlertMs = triggered.nextLastAlertMs,
+            nowMillis = base + 140 * oneMin
+        )
+        assertFalse(afterRest.shouldAlert)
+        assertEquals(0L, afterRest.nextDriveStartMs)
+    }
+
+    @Test
+    fun voiceExtraCommands_detectRemainingDistanceAndHandsFreeToggles() {
+        assertTrue(VoiceCopilotManager.isRemainingDistanceCommand(listOf("¿Cuánto falta para llegar?")))
+        assertTrue(VoiceCopilotManager.isRemainingDistanceCommand(listOf("cuanto falta")))
+        assertTrue(VoiceCopilotManager.isRemainingDistanceCommand(listOf("hora de llegada")))
+        assertFalse(VoiceCopilotManager.isRemainingDistanceCommand(listOf("bache en ruta")))
+
+        assertTrue(VoiceCopilotManager.isDisableHandsFreeCommand(listOf("Apagar manos libres")))
+        assertTrue(VoiceCopilotManager.isDisableHandsFreeCommand(listOf("desactivar micrófono")))
+        assertFalse(VoiceCopilotManager.isDisableHandsFreeCommand(listOf("activar manos libres")))
+
+        assertTrue(VoiceCopilotManager.isEnableHandsFreeCommand(listOf("Encender manos libres")))
+        assertTrue(VoiceCopilotManager.isEnableHandsFreeCommand(listOf("activar micrófono")))
+        assertFalse(VoiceCopilotManager.isEnableHandsFreeCommand(listOf("apagar manos libres")))
+    }
+
+    @Test
+    fun seguimeHelpers_generateUnguessableTokensAndWhatsAppShareCopyWithOfflineNotice() {
+        val token1 = SeguimeRepository.generateSessionToken()
+        val token2 = SeguimeRepository.generateSessionToken()
+        assertTrue(token1.startsWith("seguime_"))
+        assertTrue(token1.length >= 24)
+        assertTrue(token1 != token2)
+
+        val url = SeguimeRepository.buildSeguimeUrl(token1)
+        assertEquals("https://gen-lang-client-0699193083.web.app/seguime.html?s=$token1", url)
+
+        val msg = SeguimeRepository.buildWhatsAppShareMessage(
+            driverName = "Carlos",
+            vehicleSummary = "Toyota Hilux (AE 456 BC)",
+            destinationTitle = "Mar del Plata",
+            liveUrl = url
+        )
+        assertEquals(8L * 60L * 60L * 1000L, SeguimeRepository.MAX_SESSION_DURATION_MS)
+        assertTrue(msg.contains("Carlos"))
+        assertTrue(msg.contains("Toyota Hilux"))
+        assertTrue(msg.contains("Mar del Plata"))
+        assertTrue(msg.contains(url))
+        assertTrue(msg.contains("caduca automáticamente"))
+        assertTrue(msg.contains("sin señal 4G/5G"))
     }
 }
 
