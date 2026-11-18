@@ -635,8 +635,9 @@ fun MainScaffold(
         }
     }
 
-    // Wire hands-free voice follow-up callbacks (undo alert, pass-over prompt, shake pothole confirm)
+    // Wire hands-free voice follow-up callbacks (undo alert, pass-over prompt, shake pothole confirm + travel queries)
     LaunchedEffect(voiceCopilotManager, roadAlertRepo, currentUserName, isGuestMode) {
+        com.example.util.ViaAlertaRadarHolder.ensureDefaultCallbacks(context)
         voiceCopilotManager.onCancelAlertCommand = { alertId ->
             coroutineScope.launch {
                 roadAlertRepo.deleteAlert(alertId)

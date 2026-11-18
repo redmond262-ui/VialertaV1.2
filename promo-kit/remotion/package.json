@@ -1,0 +1,23 @@
+{
+  "name": "viaalerta-promo-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Recorrido promocional profesional para VíaAlerta en Remotion (sin caricaturas)",
+  "scripts": {
+    "studio": "remotion studio",
+    "render:vertical": "remotion render src/index.ts ViaAlertaWalkthrough-Vertical out/ViaAlerta-Reel-1080x1920.mp4",
+    "render:horizontal": "remotion render src/index.ts ViaAlertaWalkthrough-Horizontal out/ViaAlerta-Presentacion-1920x1080.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.234",
+    "@remotion/media-utils": "^4.0.234",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.234"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.6.3"
+  }
+}

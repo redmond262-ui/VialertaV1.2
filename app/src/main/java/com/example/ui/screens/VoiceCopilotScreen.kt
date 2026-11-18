@@ -448,9 +448,14 @@ fun VoiceCopilotScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             val commands = listOf(
+                Pair("¿Cuánto falta?", "Informa por voz distancia y tiempo restante al destino"),
+                Pair("¿A cuánto queda [ciudad]?", "Calcula distancia en ruta a cualquier localidad (ej. Rosario)"),
+                Pair("¿Dónde estoy?", "Lee tu ruta, kilómetro estimado y velocidad actual"),
+                Pair("¿Hay peligros adelante?", "Resume alertas activas en los próximos 15 km"),
+                Pair("Estación de servicio cercana", "Busca estaciones de combustible / GNC cercanas adelante"),
+                Pair("Recalcular ruta / Detener viaje", "Recalcula alternativas o detiene la navegación activa"),
                 Pair("Ok / Confirmo / Sí", "Confirma alertas pendientes o golpes detectados"),
                 Pair("No / Ya no está / Cancelar", "Descarta o anula una alerta reciente"),
-                Pair("¿Cuánto falta?", "Informa por voz distancia y tiempo restante al destino"),
                 Pair("Encender manos libres", "Activa el micrófono continuo manos libres"),
                 Pair("Apagar manos libres", "Detiene la escucha continua silenciosa"),
                 Pair("Bache central", "Pozo peligroso que afecta ambos sentidos"),
@@ -477,6 +482,41 @@ fun VoiceCopilotScreen(
                                         snackbarHostState.showSnackbar(msg)
                                         return@launch
                                     }
+                                    if (cmd.contains("cuánto queda", ignoreCase = true)) {
+                                        voiceCopilotManager.speak(
+                                            "Decí por ejemplo: a cuánto queda Córdoba, o tocá el micrófono para preguntar.",
+                                            isWarning = false
+                                        )
+                                        return@launch
+                                    }
+                                    if (cmd.contains("Dónde estoy")) {
+                                        val msg = voiceCopilotManager.onWhereAmIQuery?.invoke()
+                                            ?: "Sin ubicación GPS confirmada por ahora."
+                                        voiceCopilotManager.speak(msg, isWarning = false)
+                                        snackbarHostState.showSnackbar(msg)
+                                        return@launch
+                                    }
+                                    if (cmd.contains("peligros adelante")) {
+                                        val msg = voiceCopilotManager.onRouteHazardsAheadQuery?.invoke()
+                                            ?: "Sin alertas reportadas adelante por el momento."
+                                        voiceCopilotManager.speak(msg, isWarning = false)
+                                        snackbarHostState.showSnackbar(msg)
+                                        return@launch
+                                    }
+                                    if (cmd.contains("Estación de servicio")) {
+                                        val msg = voiceCopilotManager.onNearbyFuelQuery?.invoke(false)
+                                            ?: "No pude buscar estaciones en este momento."
+                                        voiceCopilotManager.speak(msg, isWarning = false)
+                                        snackbarHostState.showSnackbar(msg)
+                                        return@launch
+                                    }
+                                    if (cmd.contains("Recalcular ruta")) {
+                                        val msg = voiceCopilotManager.onRecalculateRouteCommand?.invoke()
+                                            ?: "Trazá un destino primero en el mapa."
+                                        voiceCopilotManager.speak(msg, isWarning = false)
+                                        snackbarHostState.showSnackbar(msg)
+                                        return@launch
+                                    }
                                     if (cmd.contains("Apagar manos libres")) {
                                         voiceCopilotManager.setHandsFreeLoopEnabled(false, announce = true)
                                         snackbarHostState.showSnackbar("Manos libres desactivado")
@@ -496,7 +536,7 @@ fun VoiceCopilotScreen(
                                         return@launch
                                     }
                                     if (cmd.contains("Silenciar")) {
-                                        voiceCopilotManager.speak("Alertas silenciadas por el resto del tramo.")
+                                        voiceCopilotManager.setAudioMuted(true)
                                         snackbarHostState.showSnackbar("Alertas silenciadas")
                                         return@launch
                                     }

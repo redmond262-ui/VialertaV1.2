@@ -85,7 +85,7 @@ jobs:
       - name: Subir APK descargable (Artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: ViaAlerta-v2.1-APK
+          name: ViaAlerta-v2.2-APK
           path: ViaAlerta.apk
           if-no-files-found: error
 

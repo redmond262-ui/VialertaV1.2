@@ -34,7 +34,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Directions
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Navigation
@@ -43,6 +45,8 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -70,7 +74,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +81,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -109,6 +114,7 @@ import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import com.example.ui.theme.Slate950
+import com.example.util.ActiveTripSnapshot
 import com.example.util.DriverPreferences
 import com.example.util.LocationRadarManager
 import com.example.util.OfflineAlertQueue
@@ -152,12 +158,15 @@ fun MapScreen(
     onRequestVoiceListening: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     val driverLocation by locationRadarManager.currentLocation.collectAsState()
     val isVoiceListening by voiceCopilotManager.isListening.collectAsState()
     val isHandsFreeLoop by voiceCopilotManager.isHandsFreeLoop.collectAsState()
+    val isAudioMuted by voiceCopilotManager.isAudioMuted.collectAsState()
     val voiceStatusMessage by voiceCopilotManager.copilotStatusMessage.collectAsState()
 
     val activeAlerts by roadAlertRepository.observeActiveAlerts().collectAsState(initial = emptyList())
@@ -213,6 +222,8 @@ fun MapScreen(
     var destinationDurationSeconds by remember { mutableDoubleStateOf(-1.0) }
     var routePolyline by remember { mutableStateOf<List<Pair<Double, Double>>>(emptyList()) }
     var isRouteActive by remember { mutableStateOf(false) }
+    var isRouteOverviewMode by remember { mutableStateOf(false) }
+    var isRouteCardCollapsed by remember { mutableStateOf(false) }
     var isFetchingRoutes by remember { mutableStateOf(false) }
     var fitRouteTrigger by remember { mutableIntStateOf(0) }
     var recalcTrigger by remember { mutableIntStateOf(0) }
@@ -364,32 +375,64 @@ fun MapScreen(
         }
     }
 
-    // Voice copilot "¿Cuánto falta?" live ETA/distance query handler
-    val latestRemainingQuery = rememberUpdatedState<() -> String?> {
+    // Sync alerts & active trip into process-wide ViaAlertaRadarHolder so voice queries
+    // ("¿Cuánto falta?", "¿Hay peligros adelante?", "¿Dónde estoy?", etc.) keep working across tabs!
+    LaunchedEffect(activeAlerts) {
+        ViaAlertaRadarHolder.latestActiveAlerts.value = activeAlerts
+    }
+    LaunchedEffect(
+        selectedDestination,
+        destinationRoadDistanceMeters,
+        destinationDurationSeconds,
+        incidentDelaySeconds,
+        smoothedMovingSpeedKmH,
+        isRouteActive,
+        routePolyline
+    ) {
         val dest = selectedDestination
-        if (dest == null) {
-            "No tenés un destino cargado en el mapa en este momento."
+        ViaAlertaRadarHolder.activeTripSnapshot.value = if (dest == null) {
+            null
         } else {
-            val paceAdjustedSeconds = RoadRoutingManager.adjustDurationForMovingPace(
-                baseDurationSeconds = destinationDurationSeconds,
-                routeDistanceMeters = destinationRoadDistanceMeters,
-                smoothedMovingSpeedKmH = if (isRouteActive) smoothedMovingSpeedKmH else 0f
+            ActiveTripSnapshot(
+                destinationTitle = dest.title,
+                destinationLat = dest.latitude,
+                destinationLon = dest.longitude,
+                remainingDistanceMeters = destinationRoadDistanceMeters,
+                remainingDurationSeconds = destinationDurationSeconds,
+                incidentDelaySeconds = incidentDelaySeconds,
+                smoothedMovingSpeedKmH = smoothedMovingSpeedKmH,
+                isRouteActive = isRouteActive,
+                routePolyline = routePolyline
             )
-            val (arrivalTime, durationText) = RoadRoutingManager.calculateFormattedETA(
-                durationSeconds = paceAdjustedSeconds,
-                extraIncidentDelaySeconds = incidentDelaySeconds,
-                nowMillis = System.currentTimeMillis()
-            )
-            val distText = if (destinationRoadDistanceMeters > 0) {
-                LocationRadarManager.formatDisplayDistance(destinationRoadDistanceMeters)
-            } else "distancia en cálculo"
-            "Para llegar a ${dest.title} faltan $distText, aproximadamente $durationText. Hora estimada de llegada $arrivalTime."
         }
     }
+
     DisposableEffect(voiceCopilotManager) {
-        voiceCopilotManager.onRemainingDistanceQuery = { latestRemainingQuery.value.invoke() }
+        ViaAlertaRadarHolder.ensureDefaultCallbacks(context)
+        ViaAlertaRadarHolder.onStopTripRequested = {
+            if (isRouteActive || selectedDestination != null) {
+                isRouteActive = false
+                isRouteOverviewMode = false
+                isRouteCardCollapsed = false
+                val closingSeguimeId = activeSeguimeSessionId
+                if (closingSeguimeId != null) {
+                    activeSeguimeSessionId = null
+                    coroutineScope.launch {
+                        seguimeRepo.finishSession(sessionId = closingSeguimeId, status = "cancelled")
+                    }
+                }
+                true
+            } else false
+        }
+        ViaAlertaRadarHolder.onRecalculateTripRequested = {
+            if (selectedDestination != null) {
+                recalcTrigger++
+                true
+            } else false
+        }
         onDispose {
-            voiceCopilotManager.onRemainingDistanceQuery = null
+            ViaAlertaRadarHolder.onStopTripRequested = null
+            ViaAlertaRadarHolder.onRecalculateTripRequested = null
         }
     }
 
@@ -796,19 +839,21 @@ fun MapScreen(
             selectedRouteIndex = selectedRouteIndex,
             isRouteActive = isRouteActive,
             isNightDimMode = isNightDimActive,
+            isRouteOverviewMode = isRouteOverviewMode,
             fitRouteTrigger = fitRouteTrigger,
             followedSession = activeFollowedSession,
             followedFocusTrigger = followedFocusTrigger,
+            onRouteOverviewModeChange = { overview -> isRouteOverviewMode = overview },
             onMapInteractionChange = { interacting -> isInteractingWithMap = interacting },
             onAlertSelected = { selectedAlert = it }
         )
 
-        // Subtle low-glare veil during Night Mode (passes touch events straight through to MapView)
+        // Real low-glare night cabin veil during Night Mode (stacked atop Dark Matter tiles)
         if (isNightDimActive) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF020617).copy(alpha = 0.22f))
+                    .background(Color(0xFF020612).copy(alpha = 0.34f))
             )
         }
 
@@ -1051,9 +1096,13 @@ fun MapScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
+                                                    focusManager.clearFocus()
+                                                    keyboardController?.hide()
                                                     selectedRouteIndex = 0
                                                     hasNetworkRoute = false
                                                     hasSearchedQuery = false
+                                                    isRouteCardCollapsed = false
+                                                    isRouteOverviewMode = true
                                                     selectedDestination = item
                                                     searchQuery = item.title
                                                     searchSuggestions = emptyList()
@@ -1169,8 +1218,61 @@ fun MapScreen(
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {
+                                    // Mute / Unmute voice audio right from active navigation
+                                    Surface(
+                                        color = if (isAudioMuted) AlertRed500.copy(alpha = 0.25f) else Slate800,
+                                        shape = CircleShape,
+                                        border = BorderStroke(1.dp, if (isAudioMuted) AlertRed500 else Slate700),
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clickable {
+                                                val muted = voiceCopilotManager.toggleAudioMuted()
+                                                coroutineScope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (muted) "🔇 Voz del copiloto silenciada" else "🔊 Voz del copiloto activada"
+                                                    )
+                                                }
+                                            }
+                                            .testTag("nav_mute_voice_btn")
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = if (isAudioMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                                                contentDescription = if (isAudioMuted) "Reactivar voz" else "Silenciar voz",
+                                                tint = if (isAudioMuted) AlertRed500 else Color(0xFF34D399),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+
+                                    // Toggle Full-Route Overview vs 3D Car Follow
+                                    Surface(
+                                        color = if (isRouteOverviewMode) Color(0xFF0EA5E9).copy(alpha = 0.28f) else Slate800,
+                                        shape = CircleShape,
+                                        border = BorderStroke(1.dp, if (isRouteOverviewMode) Color(0xFF38BDF8) else Slate700),
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clickable {
+                                                val nextOverview = !isRouteOverviewMode
+                                                isRouteOverviewMode = nextOverview
+                                                if (nextOverview) {
+                                                    fitRouteTrigger++
+                                                }
+                                            }
+                                            .testTag("nav_overview_btn")
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Map,
+                                                contentDescription = "Ver toda la ruta en el mapa",
+                                                tint = if (isRouteOverviewMode) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.85f),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+
                                     if (!isGuestMode) {
                                         Surface(
                                             color = if (activeSeguimeSessionId != null) SafetyGreen500.copy(alpha = 0.25f) else Slate800,
@@ -1197,8 +1299,9 @@ fun MapScreen(
 
                                     // Night glare toggle right inside nav pill
                                     Surface(
-                                        color = Slate800,
+                                        color = if (isNightDimActive) Amber500.copy(alpha = 0.22f) else Slate800,
                                         shape = CircleShape,
+                                        border = BorderStroke(1.dp, if (isNightDimActive) Amber400 else Slate700),
                                         modifier = Modifier
                                             .size(34.dp)
                                             .clickable {
@@ -1212,7 +1315,7 @@ fun MapScreen(
                                                 coroutineScope.launch {
                                                     val msg = when (nextMode) {
                                                         "ON" -> "🌙 Modo nocturno activado"
-                                                        "OFF" -> "☀️ Modo nocturno desactivado"
+                                                        "OFF" -> "☀️ Modo día en mapa activado"
                                                         else -> "🌙 Modo nocturno automático (20:00–06:00)"
                                                     }
                                                     snackbarHostState.showSnackbar(msg)
@@ -1224,7 +1327,7 @@ fun MapScreen(
                                             Icon(
                                                 imageVector = if (isNightDimActive) Icons.Default.DarkMode else Icons.Default.LightMode,
                                                 contentDescription = "Modo Nocturno",
-                                                tint = if (isNightDimActive) Amber400 else Color.White.copy(alpha = 0.8f),
+                                                tint = if (isNightDimActive) Amber400 else Color.White.copy(alpha = 0.85f),
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -1236,6 +1339,8 @@ fun MapScreen(
                                         modifier = Modifier
                                             .clickable {
                                                 isRouteActive = false
+                                                isRouteOverviewMode = false
+                                                isRouteCardCollapsed = false
                                                 val closingSeguimeId = activeSeguimeSessionId
                                                 if (closingSeguimeId != null) {
                                                     activeSeguimeSessionId = null
@@ -1272,8 +1377,68 @@ fun MapScreen(
                                 }
                             }
                         }
+                    } else if (isRouteCardCollapsed) {
+                        // Collapsed slim overview bar when user tapped "Ver Mapa / Ver Ruta" so 85%+ of map is clear
+                        Surface(
+                            color = Slate900.copy(alpha = 0.94f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp).testTag("destination_route_collapsed_hud")
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "🗺️ ${dest.title}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "$durationText • $formattedRemaining • Llegada $arrivalTime",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF38BDF8),
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { isRouteCardCollapsed = false },
+                                    contentPadding = PaddingValues(horizontal = 10.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Slate700),
+                                    modifier = Modifier.heightIn(min = 38.dp).testTag("expand_route_card_btn")
+                                ) {
+                                    Icon(Icons.Default.ExpandMore, contentDescription = "Ver opciones de ruta", modifier = Modifier.size(16.dp), tint = Color.White)
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("Opciones", fontSize = 11.sp, color = Color.White)
+                                }
+                                Button(
+                                    onClick = {
+                                        isRouteCardCollapsed = false
+                                        isRouteOverviewMode = false
+                                        isRouteActive = true
+                                        tripStartAvoidedCount = DriverPreferences.getAvoidedHazardsTotal(context)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF10B981),
+                                        contentColor = Color(0xFF0F172A)
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.heightIn(min = 38.dp).testTag("collapsed_start_trip_btn")
+                                ) {
+                                    Text("Iniciar", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
                     } else {
-                        // Preview card with up to 3 selectable alternative routes
+                        // Preview card with genuine alternative routes
                         Surface(
                             color = Slate900.copy(alpha = 0.96f),
                             shape = RoundedCornerShape(14.dp),
@@ -1295,7 +1460,7 @@ fun MapScreen(
                                             maxLines = 1
                                         )
                                         Text(
-                                            text = if (isFetchingRoutes) "Calculando 3 rutas..." else "$arrivalTime ($durationText • $formattedRemaining)",
+                                            text = if (isFetchingRoutes) "Calculando rutas..." else "$arrivalTime ($durationText • $formattedRemaining)",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = Color(0xFF38BDF8),
                                             fontWeight = FontWeight.Bold
@@ -1305,6 +1470,8 @@ fun MapScreen(
                                         onClick = {
                                             selectedDestination = null
                                             isRouteActive = false
+                                            isRouteOverviewMode = false
+                                            isRouteCardCollapsed = false
                                             routePolyline = emptyList()
                                             routeOptions = emptyList()
                                             hasNetworkRoute = false
@@ -1402,9 +1569,12 @@ fun MapScreen(
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(
                                         onClick = {
+                                            focusManager.clearFocus()
+                                            keyboardController?.hide()
+                                            isRouteCardCollapsed = false
+                                            isRouteOverviewMode = false
                                             isRouteActive = true
                                             tripStartAvoidedCount = DriverPreferences.getAvoidedHazardsTotal(context)
-                                            fitRouteTrigger++
                                             val hazardsCount = if (routePolyline.size >= 2) {
                                                 activeAlerts.count {
                                                     RoadRoutingManager.minDistanceMetersToRoute(it.latitude, it.longitude, routePolyline) <= 220.0
@@ -1460,14 +1630,22 @@ fun MapScreen(
                                     }
 
                                     OutlinedButton(
-                                        onClick = { fitRouteTrigger++ },
+                                        onClick = {
+                                            focusManager.clearFocus()
+                                            keyboardController?.hide()
+                                            isRouteCardCollapsed = true
+                                            isRouteOverviewMode = true
+                                            fitRouteTrigger++
+                                        },
                                         contentPadding = PaddingValues(horizontal = 10.dp),
                                         shape = RoundedCornerShape(10.dp),
-                                        border = BorderStroke(1.dp, Slate700),
-                                        modifier = Modifier.heightIn(min = 48.dp)
+                                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.7f)),
+                                        modifier = Modifier.heightIn(min = 48.dp).testTag("view_route_map_btn")
                                     ) {
+                                        Icon(Icons.Default.Map, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            text = "Ver Ruta",
+                                            text = "Ver Mapa",
                                             fontSize = 11.sp,
                                             color = Color.White,
                                             maxLines = 1,
@@ -1579,7 +1757,7 @@ fun MapScreen(
             }
         }
 
-        // Direct In-Map Hands-Free Voice Mic + Continuous Toggle + Seguime above Speedometer
+        // Direct In-Map Hands-Free Voice Mic + Night Toggle + Seguime above Speedometer
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -1588,6 +1766,54 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.Start
         ) {
+            // 1-tap Day/Night map style toggle right on the map
+            Surface(
+                color = if (isNightDimActive) Amber500.copy(alpha = 0.22f) else Slate900.copy(alpha = 0.92f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, if (isNightDimActive) Amber400 else Slate700),
+                shadowElevation = 6.dp,
+                modifier = Modifier
+                    .heightIn(min = 42.dp)
+                    .clickable {
+                        val nextMode = when (nightModePref) {
+                            "AUTO" -> "ON"
+                            "ON" -> "OFF"
+                            else -> "AUTO"
+                        }
+                        DriverPreferences.setNightModePreference(context, nextMode)
+                        nightModePref = nextMode
+                        coroutineScope.launch {
+                            val msg = when (nextMode) {
+                                "ON" -> "🌙 Modo nocturno activado"
+                                "OFF" -> "☀️ Modo día activado"
+                                else -> "🌙 Modo nocturno automático (20:00–06:00)"
+                            }
+                            snackbarHostState.showSnackbar(msg)
+                        }
+                    }
+                    .testTag("map_night_mode_btn")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isNightDimActive) Icons.Default.DarkMode else Icons.Default.LightMode,
+                        contentDescription = "Cambiar entre modo día y modo nocturno",
+                        tint = if (isNightDimActive) Amber400 else Color(0xFFFDE047),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isNightDimActive) "Noche" else "Día",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                }
+            }
+
             if (!isGuestMode) {
                 Surface(
                     color = if (activeSeguimeSessionId != null) SafetyGreen500.copy(alpha = 0.25f) else Slate900.copy(alpha = 0.92f),

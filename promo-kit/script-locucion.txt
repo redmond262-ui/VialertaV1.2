@@ -1,0 +1,23 @@
+GUION DE LOCUCIÓN OFICIAL — VÍAALERTA v2.1 (Español Rioplatense, tono claro, serio y cercano)
+Duración total aproximada: 48 segundos (1440 frames @ 30fps)
+
+[00:00 - 00:05] ESCENA 1 — EL PROBLEMA REAL EN RUTA
+"En ruta abierta, un pozo profundo, un corte imprevisto o viajar sin señal 4G no pueden tomarte por sorpresa."
+
+[00:05 - 00:13] ESCENA 2 — RADAR VIAL Y ACELERÓMETRO EN VIVO
+"VíaAlerta es el copiloto vial comunitario pensado para las rutas argentinas: detecta impactos de calzada con el acelerómetro y te avisa pozos, obras, agua y radares antes de llegar."
+
+[00:13 - 00:21] ESCENA 3 — COPILOTO POR VOZ MANOS LIBRES Y ANTI-FATIGA
+"Manejás sin tocar la pantalla. Su copiloto de voz mantiene el micrófono listo para que reportes o preguntes cuánto falta, y te recuerda descansar cada dos o tres horas de manejo continuo."
+
+[00:21 - 00:30] ESCENA 4 — SEGUIME EN TIEMPO REAL CON PRIVACIDAD REAL
+"Con Seguime compartís tu recorrido en vivo por WhatsApp. Tus familiares ven tu ruta sin apps extra ni APIs pagas, y el enlace caduca y borra tu ubicación apenas llegás o cancelás."
+
+[00:30 - 00:38] ESCENA 5 — MODO OFFLINE Y SOS VERIFICADO
+"¿Te quedaste sin señal en plena ruta? Tus alertas se guardan en cola offline y suben solas al volver el 4G. Y si quedás varado, pedís auxilio SOS con DNI y patente verificados."
+
+[00:38 - 00:44] ESCENA 6 — COMUNIDAD, XP Y MODO INVITADO
+"Sumás puntos de experiencia por cada aviso confirmado, desbloqueás días PRO con tus referidos y podés probar el mapa al instante en Modo Invitado."
+
+[00:44 - 00:48] ESCENA 7 — CIERRE Y DESCARGA
+"Avisá. Cuidá. Conducí mejor. Descargá VíaAlerta gratis para Android en el enlace oficial."

@@ -471,5 +471,103 @@ class DriverLogicUnitTest {
         assertEquals(null, SeguimeRepository.parseSessionIdFromText("viaalerta://seguime?s=corto"))
         assertEquals(null, SeguimeRepository.parseSessionIdFromText(""))
     }
+
+    @Test
+    fun routeAlternativesFilter_dropsForcedLongDetoursAndLabelsSingleDirectRoute() {
+        val mainRoute = RoadRoutingManager.RouteOption(
+            index = 0,
+            label = "Opción 1",
+            distanceMeters = 50_000.0,
+            durationSeconds = 2_400.0,
+            routePoints = listOf(Pair(-32.0, -60.0), Pair(-32.25, -60.25), Pair(-32.5, -60.5))
+        )
+        val exaggeratedTownDetour = RoadRoutingManager.RouteOption(
+            index = 1,
+            label = "Opción 2",
+            distanceMeters = 78_000.0, // > 1.28x primary
+            durationSeconds = 4_200.0,
+            routePoints = listOf(Pair(-32.0, -60.0), Pair(-32.3, -60.05), Pair(-32.5, -60.5))
+        )
+        val genuineAlternative = RoadRoutingManager.RouteOption(
+            index = 2,
+            label = "Opción 3",
+            distanceMeters = 55_000.0, // <= 1.28x primary and distinct corridor
+            durationSeconds = 2_700.0,
+            routePoints = listOf(Pair(-32.0, -60.0), Pair(-32.25, -60.40), Pair(-32.5, -60.5))
+        )
+
+        val singleFiltered = RoadRoutingManager.filterGenuineAlternativeRoutes(
+            listOf(mainRoute, exaggeratedTownDetour)
+        )
+        assertEquals(1, singleFiltered.size)
+        assertEquals("Ruta directa", singleFiltered.first().label)
+
+        val multiFiltered = RoadRoutingManager.filterGenuineAlternativeRoutes(
+            listOf(mainRoute, exaggeratedTownDetour, genuineAlternative)
+        )
+        assertEquals(2, multiFiltered.size)
+        assertEquals("Más rápida", multiFiltered[0].label)
+        assertEquals("Alternativa 2", multiFiltered[1].label)
+    }
+
+    @Test
+    fun voiceAntiEchoAndExpandedTravelCommands_behaveAccurately() {
+        val now = 100_000L
+        val recentUtterances = listOf(
+            (now - 3_000L) to VoiceCopilotManager.normalizeSpeech(
+                "¡Atención! Pozo profundo de 18 centímetros en tu carril a 300 metros. Reduzca la velocidad."
+            )
+        )
+
+        assertTrue(
+            VoiceCopilotManager.isLikelySelfEcho(
+                listOf("pozo profundo de 18 centimetros"),
+                recentUtterances,
+                now
+            )
+        )
+        assertTrue(
+            VoiceCopilotManager.isLikelySelfEcho(
+                listOf("no te entendi podes decir pozo"),
+                recentUtterances,
+                now
+            )
+        )
+        assertFalse(
+            VoiceCopilotManager.isLikelySelfEcho(
+                listOf("a cuanto queda Rosario"),
+                recentUtterances,
+                now
+            )
+        )
+        assertFalse(
+            VoiceCopilotManager.isLikelySelfEcho(
+                listOf("radar adelante"),
+                recentUtterances,
+                now
+            )
+        )
+
+        assertTrue(VoiceCopilotManager.isRemainingDistanceCommand(listOf("cuánto tiempo falta")))
+        assertTrue(VoiceCopilotManager.isRemainingDistanceCommand(listOf("cuántos kilómetros faltan")))
+        assertTrue(VoiceCopilotManager.isRemainingDistanceCommand(listOf("a qué hora llegamos")))
+        assertFalse(VoiceCopilotManager.isRemainingDistanceCommand(listOf("cuánto falta para Rosario")))
+
+        assertEquals("rosario", VoiceCopilotManager.extractDistancePlaceQuery(listOf("¿A cuánto queda Rosario?")))
+        assertEquals("villa maria", VoiceCopilotManager.extractDistancePlaceQuery(listOf("cuánto falta para Villa María")))
+        assertEquals(null, VoiceCopilotManager.extractDistancePlaceQuery(listOf("cuánto falta para llegar")))
+
+        assertTrue(VoiceCopilotManager.isWhereAmICommand(listOf("¿Dónde estoy?")))
+        assertTrue(VoiceCopilotManager.isWhereAmICommand(listOf("a qué velocidad voy")))
+        assertTrue(VoiceCopilotManager.isRouteHazardsAheadCommand(listOf("¿Hay peligros adelante?")))
+        assertTrue(VoiceCopilotManager.isRouteHazardsAheadCommand(listOf("cómo está la ruta")))
+
+        assertEquals(false, VoiceCopilotManager.extractFuelQueryPreference(listOf("estación de servicio cercana")))
+        assertEquals(true, VoiceCopilotManager.extractFuelQueryPreference(listOf("dónde hay GNC adelante")))
+        assertEquals(null, VoiceCopilotManager.extractFuelQueryPreference(listOf("reportar pozo en ruta")))
+
+        assertTrue(VoiceCopilotManager.isStopNavigationCommand(listOf("detener navegación")))
+        assertTrue(VoiceCopilotManager.isRecalculateRouteCommand(listOf("recalcular ruta")))
+    }
 }
 

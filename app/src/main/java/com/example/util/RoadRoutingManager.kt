@@ -283,6 +283,34 @@ object RoadRoutingManager {
     }
 
     /**
+     * Filters real OSRM routes so genuine parallel corridors are shown while long invented
+     * town-street loops or redundant identical paths are discarded.
+     */
+    fun filterGenuineAlternativeRoutes(rawRoutes: List<RouteOption>): List<RouteOption> {
+        if (rawRoutes.isEmpty()) return emptyList()
+        val sortedFastest = rawRoutes.sortedBy { it.durationSeconds }
+        val primary = sortedFastest.first()
+        val kept = mutableListOf(primary)
+        for (candidate in sortedFastest.drop(1)) {
+            val reasonableDistance = candidate.distanceMeters <= primary.distanceMeters * 1.28
+            val reasonableDuration = candidate.durationSeconds <= primary.durationSeconds * 1.35
+            if (reasonableDistance && reasonableDuration && kept.none { isNearlySameRoute(it, candidate) }) {
+                kept.add(candidate)
+            }
+            if (kept.size >= 3) break
+        }
+        return kept.mapIndexed { idx, opt ->
+            val label = when {
+                kept.size == 1 -> "Ruta directa"
+                idx == 0 -> "Más rápida"
+                idx == 1 -> "Alternativa 2"
+                else -> "Alternativa 3"
+            }
+            opt.copy(index = idx, label = label)
+        }
+    }
+
+    /**
      * Requests up to 3 real road-network routes from OSRM (`alternatives=3`).
      * If public OSRM returns only 1 route on a trip >= 2.5 km, automatically queries
      * 2 lateral corridor bypass waypoints in parallel so the driver receives 2–3 real options.
@@ -327,53 +355,9 @@ object RoadRoutingManager {
         }
 
         if (baseRoutes.isNotEmpty()) {
-            val collected = baseRoutes.toMutableList()
-            val primary = collected.first()
-
-            // If OSRM only gave 1 path on a trip >= 2.5 km, query lateral bypass corridors in parallel
-            if (collected.size < 2 && straightDist >= 2500.0) {
-                val vias = buildLateralCorridorWaypoints(lat1, lon1, lat2, lon2, offsetFraction = 0.14)
-                if (vias.isNotEmpty()) {
-                    try {
-                        val viaCandidates = coroutineScope {
-                            vias.map { (vLat, vLon) ->
-                                async(Dispatchers.IO) {
-                                    try {
-                                        val viaUrl = "$OSRM_BASE_URL$lon1,$lat1;$vLon,$vLat;$lon2,$lat2?overview=full&geometries=geojson&steps=false"
-                                        fetchOsrmRoutesSync(viaUrl, connectTimeoutMs = 4500, readTimeoutMs = 5500).firstOrNull()
-                                    } catch (_: Throwable) {
-                                        null
-                                    }
-                                }
-                            }.mapNotNull { it.await() }
-                        }
-
-                        for (cand in viaCandidates) {
-                            val reasonableLength = cand.distanceMeters <= primary.distanceMeters * 2.1 &&
-                                cand.durationSeconds <= primary.durationSeconds * 2.3
-                            if (reasonableLength && collected.none { isNearlySameRoute(it, cand) }) {
-                                collected.add(cand)
-                            }
-                            if (collected.size >= 3) break
-                        }
-                    } catch (t: Throwable) {
-                        Log.w(TAG, "Lateral corridor fallback skipped: ${t.message}")
-                    }
-                }
-            }
-
-            // Re-index and apply clean Spanish labels sorted fastest-first
-            val sorted = collected
-                .sortedBy { it.durationSeconds }
-                .take(3)
-                .mapIndexed { idx, opt ->
-                    val label = when (idx) {
-                        0 -> "Más rápida"
-                        1 -> "Alternativa 2"
-                        else -> "Alternativa 3"
-                    }
-                    opt.copy(index = idx, label = label)
-                }
+            // Only keep genuine OSRM road-network alternatives within sensible detour limits.
+            // Never inject artificial lateral bypass waypoints on direct single-highway corridors.
+            val sorted = filterGenuineAlternativeRoutes(baseRoutes)
 
             val first = sorted.first()
             routeCache[cacheKey] = CachedRoute(
@@ -384,7 +368,7 @@ object RoadRoutingManager {
                 isFromNetwork = true
             )
             multiRouteCache[cacheKey] = CachedMultiRoute(sorted, System.currentTimeMillis())
-            Log.d(TAG, "OSRM resolved ${sorted.size} route options cleanly")
+            Log.d(TAG, "OSRM resolved ${sorted.size} genuine route option(s)")
             return@withContext sorted
         }
 
@@ -704,5 +688,138 @@ object RoadRoutingManager {
         } else {
             "GPS: ($coordsText)"
         }
+    }
+
+    data class NearbyFuelStation(
+        val name: String,
+        val brand: String,
+        val hasGnc: Boolean,
+        val latitude: Double,
+        val longitude: Double,
+        val distanceMeters: Double,
+        val isAhead: Boolean
+    )
+
+    /**
+     * Queries free OpenStreetMap Overpass API (with mirror + Nominatim fallback) for fuel/GNC
+     * stations near the driver, preferring stations ahead along the travel heading.
+     */
+    suspend fun findNearbyFuelStations(
+        lat: Double,
+        lon: Double,
+        heading: Float = -1f,
+        radiusMeters: Int = 25_000,
+        preferGnc: Boolean = false
+    ): List<NearbyFuelStation> = withContext(Dispatchers.IO) {
+        val gncFilter = if (preferGnc) "[\"fuel:cng\"=\"yes\"]" else ""
+        val overpassQuery = "[out:json][timeout:8];(node[\"amenity\"=\"fuel\"]$gncFilter(around:$radiusMeters,$lat,$lon);way[\"amenity\"=\"fuel\"]$gncFilter(around:$radiusMeters,$lat,$lon););out center 18;"
+        val encodedQuery = URLEncoder.encode(overpassQuery, "UTF-8")
+        val endpoints = listOf(
+            "https://overpass-api.de/api/interpreter?data=$encodedQuery",
+            "https://overpass.kumi.systems/api/interpreter?data=$encodedQuery"
+        )
+
+        val stations = mutableListOf<NearbyFuelStation>()
+
+        for (endpoint in endpoints) {
+            try {
+                val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 4500
+                    readTimeout = 6000
+                    setRequestProperty("User-Agent", "ViaAlerta-App/1.3 (Android; Argentina)")
+                }
+                if (conn.responseCode == HttpURLConnection.HTTP_OK) {
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    val elements = JSONObject(text).optJSONArray("elements") ?: continue
+                    for (i in 0 until elements.length()) {
+                        val el = elements.getJSONObject(i)
+                        val center = el.optJSONObject("center")
+                        val sLat = center?.optDouble("lat", Double.NaN) ?: el.optDouble("lat", Double.NaN)
+                        val sLon = center?.optDouble("lon", Double.NaN) ?: el.optDouble("lon", Double.NaN)
+                        if (sLat.isNaN() || sLon.isNaN()) continue
+                        val tags = el.optJSONObject("tags")
+                        val rawBrand = tags?.optString("brand", "")?.trim().orEmpty()
+                        val rawName = tags?.optString("name", "")?.trim().orEmpty()
+                        val displayName = when {
+                            rawName.isNotBlank() -> rawName
+                            rawBrand.isNotBlank() -> "Estación $rawBrand"
+                            else -> "Estación de servicio"
+                        }
+                        val hasGnc = tags?.optString("fuel:cng", "")?.equals("yes", ignoreCase = true) == true ||
+                            displayName.contains("gnc", ignoreCase = true)
+                        val dist = LocationRadarManager.calculateDistanceMeters(lat, lon, sLat, sLon)
+                        val isAhead = if (heading >= 0f) {
+                            val bearing = LocationRadarManager.calculateBearing(lat, lon, sLat, sLon)
+                            LocationRadarManager.angleDifference(heading, bearing) <= 75f
+                        } else true
+                        stations.add(
+                            NearbyFuelStation(
+                                name = displayName,
+                                brand = rawBrand,
+                                hasGnc = hasGnc,
+                                latitude = sLat,
+                                longitude = sLon,
+                                distanceMeters = dist,
+                                isAhead = isAhead
+                            )
+                        )
+                    }
+                    if (stations.isNotEmpty()) break
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Overpass fuel query failed ($endpoint): ${t.message}")
+            }
+        }
+
+        if (stations.isEmpty()) {
+            try {
+                val queryText = if (preferGnc) "estacion de servicio gnc" else "estacion de servicio"
+                val viewDelta = 0.25
+                val encoded = URLEncoder.encode(queryText, "UTF-8")
+                val url = URL(
+                    "https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=8" +
+                        "&viewbox=${lon - viewDelta},${lat + viewDelta},${lon + viewDelta},${lat - viewDelta}&bounded=1"
+                )
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 4000
+                    readTimeout = 4000
+                    setRequestProperty("User-Agent", "ViaAlerta-App/1.3 (Android; Argentina)")
+                }
+                if (conn.responseCode == HttpURLConnection.HTTP_OK) {
+                    val array = org.json.JSONArray(conn.inputStream.bufferedReader().use { it.readText() })
+                    for (i in 0 until array.length()) {
+                        val item = array.getJSONObject(i)
+                        val sLat = item.optDouble("lat", Double.NaN)
+                        val sLon = item.optDouble("lon", Double.NaN)
+                        if (sLat.isNaN() || sLon.isNaN()) continue
+                        val title = item.optString("display_name", "Estación de servicio").substringBefore(",").trim()
+                        val dist = LocationRadarManager.calculateDistanceMeters(lat, lon, sLat, sLon)
+                        val isAhead = if (heading >= 0f) {
+                            val bearing = LocationRadarManager.calculateBearing(lat, lon, sLat, sLon)
+                            LocationRadarManager.angleDifference(heading, bearing) <= 75f
+                        } else true
+                        stations.add(
+                            NearbyFuelStation(
+                                name = title.ifBlank { "Estación de servicio" },
+                                brand = "",
+                                hasGnc = preferGnc || title.contains("gnc", ignoreCase = true),
+                                latitude = sLat,
+                                longitude = sLon,
+                                distanceMeters = dist,
+                                isAhead = isAhead
+                            )
+                        )
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Nominatim fuel fallback failed: ${t.message}")
+            }
+        }
+
+        stations
+            .distinctBy { "${(it.latitude * 1000).toInt()}_${(it.longitude * 1000).toInt()}" }
+            .sortedWith(compareByDescending<NearbyFuelStation> { it.isAhead }.thenBy { it.distanceMeters })
     }
 }

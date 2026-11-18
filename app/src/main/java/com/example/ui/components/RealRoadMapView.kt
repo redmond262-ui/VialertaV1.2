@@ -85,7 +85,8 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 
-private const val MAP_STYLE_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+private const val MAP_STYLE_DAY = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+private const val MAP_STYLE_NIGHT = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
 
 @Composable
 fun RealRoadMapView(
@@ -101,9 +102,11 @@ fun RealRoadMapView(
     selectedRouteIndex: Int = 0,
     isRouteActive: Boolean = false,
     isNightDimMode: Boolean = false,
+    isRouteOverviewMode: Boolean = false,
     fitRouteTrigger: Int = 0,
     followedSession: SeguimeSession? = null,
     followedFocusTrigger: Int = 0,
+    onRouteOverviewModeChange: (Boolean) -> Unit = {},
     onMapInteractionChange: (Boolean) -> Unit = {},
     onAlertSelected: (RoadAlert) -> Unit = {},
     onSosSelected: (SosRequest) -> Unit = {},
@@ -114,6 +117,7 @@ fun RealRoadMapView(
 
     var mapInstance by remember { mutableStateOf<MapLibreMap?>(null) }
     var isStyleLoaded by remember { mutableStateOf(false) }
+    var loadedStyleIsNight by remember { mutableStateOf<Boolean?>(null) }
     var hasMapLibreError by remember { mutableStateOf(false) }
     var currentZoom by remember { mutableFloatStateOf(14.5f) }
     var isInteracting by remember { mutableStateOf(false) }
@@ -154,7 +158,9 @@ fun RealRoadMapView(
                             hasInitiallyCentered = true
                         }
 
-                        map.setStyle(MAP_STYLE_DARK) {
+                        val initialStyle = if (isNightDimMode) MAP_STYLE_NIGHT else MAP_STYLE_DAY
+                        loadedStyleIsNight = isNightDimMode
+                        map.setStyle(initialStyle) {
                             isStyleLoaded = true
                             if (isRealFix) {
                                 hasInitiallyCentered = true
@@ -257,16 +263,32 @@ fun RealRoadMapView(
         }
     }
 
+    // Dynamically switch MapLibre base style whenever user/clock toggles Day <-> Night Mode
+    LaunchedEffect(mapInstance, isNightDimMode) {
+        val map = mapInstance ?: return@LaunchedEffect
+        if (loadedStyleIsNight != isNightDimMode) {
+            isStyleLoaded = false
+            loadedStyleIsNight = isNightDimMode
+            val targetStyle = if (isNightDimMode) MAP_STYLE_NIGHT else MAP_STYLE_DAY
+            try {
+                map.setStyle(targetStyle) {
+                    isStyleLoaded = true
+                }
+            } catch (t: Throwable) {
+                android.util.Log.w("RealRoadMapView", "Failed to switch map style: ${t.message}")
+            }
+        }
+    }
+
     // Camera Auto-Follow ("Follow Vehicle"):
-    // As long as the user hasn't touched the map in the last 6 seconds, the camera smoothly tracks
-    // the driver's vehicle position and orientation.
-    LaunchedEffect(driverLocation, isInteracting) {
+    // Tracks the vehicle smoothly unless the driver is touching the map or inspecting Full Route Overview.
+    LaunchedEffect(driverLocation, isInteracting, isRouteOverviewMode) {
         val map = mapInstance ?: return@LaunchedEffect
         if (!isStyleLoaded) return@LaunchedEffect
 
         val now = System.currentTimeMillis()
         val timeSinceLastTouch = now - userTouchTimestamp
-        val shouldAutoFollow = !isInteracting && (timeSinceLastTouch > 5500L || !hasInitiallyCentered)
+        val shouldAutoFollow = !isRouteOverviewMode && !isInteracting && (timeSinceLastTouch > 5500L || !hasInitiallyCentered)
 
         if (shouldAutoFollow) {
             val target = LatLng(driverLocation.latitude, driverLocation.longitude)
@@ -285,8 +307,8 @@ fun RealRoadMapView(
         }
     }
 
-    // Fit camera to full route bounds when user requests or traces a trip
-    LaunchedEffect(fitRouteTrigger, routePolyline) {
+    // Fit camera to full route bounds cleanly with top-down flat orientation when requested
+    LaunchedEffect(fitRouteTrigger, routePolyline, isStyleLoaded) {
         val map = mapInstance ?: return@LaunchedEffect
         if (!isStyleLoaded) return@LaunchedEffect
         if (fitRouteTrigger > 0 && routePolyline.size >= 2) {
@@ -296,9 +318,14 @@ fun RealRoadMapView(
                 routePolyline.forEach { (lat, lon) -> builder.include(LatLng(lat, lon)) }
                 targetFocusLocation?.let { builder.include(LatLng(it.first, it.second)) }
                 builder.include(LatLng(driverLocation.latitude, driverLocation.longitude))
+                // Flatten pitch & north orientation so whole route overview is unmistakable
+                map.cameraPosition = CameraPosition.Builder(map.cameraPosition)
+                    .tilt(0.0)
+                    .bearing(0.0)
+                    .build()
                 map.animateCamera(
-                    CameraUpdateFactory.newLatLngBounds(builder.build(), 120, 260, 120, 180),
-                    1100
+                    CameraUpdateFactory.newLatLngBounds(builder.build(), 90, 210, 90, 170),
+                    900
                 )
             } catch (_: Throwable) {}
         }
@@ -640,20 +667,26 @@ fun RealRoadMapView(
                 Icon(Icons.Default.Remove, contentDescription = "Alejar mapa (-)", modifier = Modifier.size(22.dp))
             }
 
-            // Recenter GPS Button
+            // Recenter GPS Button (exits Route Overview & restores 3D driving camera immediately)
             FloatingActionButton(
                 onClick = {
                     try {
+                        onRouteOverviewModeChange(false)
+                        userTouchTimestamp = 0L
+                        isInteracting = false
                         val map = mapInstance
                         if (map != null && isStyleLoaded) {
                             val target = LatLng(driverLocation.latitude, driverLocation.longitude)
+                            val camBuilder = CameraPosition.Builder()
+                                .target(target)
+                                .zoom(15.6)
+                            if (driverLocation.speedKmH > 25f && driverLocation.heading > 0f) {
+                                camBuilder.tilt(40.0).bearing(driverLocation.heading.toDouble())
+                            } else {
+                                camBuilder.tilt(25.0).bearing(0.0)
+                            }
                             map.animateCamera(
-                                CameraUpdateFactory.newCameraPosition(
-                                    CameraPosition.Builder()
-                                        .target(target)
-                                        .zoom(15.5)
-                                        .build()
-                                ),
+                                CameraUpdateFactory.newCameraPosition(camBuilder.build()),
                                 800
                             )
                         }
@@ -663,10 +696,14 @@ fun RealRoadMapView(
                 },
                 modifier = Modifier
                     .size(48.dp)
-                    .border(1.dp, Color(0xFF00D4FF).copy(alpha = 0.5f), CircleShape)
+                    .border(
+                        width = if (isRouteOverviewMode) 2.dp else 1.dp,
+                        color = if (isRouteOverviewMode) Amber400 else Color(0xFF00D4FF).copy(alpha = 0.5f),
+                        shape = CircleShape
+                    )
                     .testTag("recenter_gps_btn"),
-                containerColor = Slate900,
-                contentColor = Color(0xFF00D4FF),
+                containerColor = if (isRouteOverviewMode) Color(0xFF0F2942) else Slate900,
+                contentColor = if (isRouteOverviewMode) Amber400 else Color(0xFF00D4FF),
                 shape = CircleShape,
                 elevation = FloatingActionButtonDefaults.elevation(6.dp)
             ) {

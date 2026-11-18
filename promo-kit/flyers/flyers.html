@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VíaAlerta • Estudio de Flyers Profesionales</title>
+  <style>
+    :root {
+      --slate950: #020617;
+      --slate900: #0F172A;
+      --slate800: #1E293B;
+      --slate700: #334155;
+      --slate400: #94A3B8;
+      --slate200: #E2E8F0;
+      --slate50: #F8FAFC;
+      --amber500: #F59E0B;
+      --amber400: #FBBF24;
+      --red500: #E11D48;
+      --green500: #10B981;
+      --green400: #34D399;
+      --blue500: #38BDF8;
+      --cyan400: #00D4FF;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 40px;
+      background: #060B18;
+      color: var(--slate50);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 48px;
+    }
+    .studio-header {
+      max-width: 1080px;
+      width: 100%;
+      background: var(--slate900);
+      border: 1px solid var(--slate700);
+      border-radius: 18px;
+      padding: 20px 24px;
+    }
+    .flyer-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+    .flyer-label {
+      font-size: 14px;
+      color: var(--amber400);
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .flyer-vertical {
+      width: 1080px;
+      height: 1920px;
+      background: radial-gradient(circle at 82% 14%, #152A54 0%, #020617 62%);
+      padding: 84px 76px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      border-radius: 28px;
+    }
+    .flyer-feed {
+      width: 1080px;
+      height: 1350px;
+      background: radial-gradient(circle at 85% 16%, #14274E 0%, #020617 64%);
+      padding: 68px 72px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      border-radius: 28px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .logo-mark {
+      width: 68px;
+      height: 68px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, var(--amber400), #D97706);
+      color: #020617;
+      font-weight: 900;
+      font-size: 28px;
+      display: grid;
+      place-items: center;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 22px;
+      border-radius: 999px;
+      font-weight: 900;
+      font-size: 20px;
+      letter-spacing: 0.8px;
+    }
+    .hero-title {
+      margin: 28px 0 18px;
+      font-weight: 900;
+      letter-spacing: -1.4px;
+      line-height: 1.04;
+    }
+    .hero-sub {
+      margin: 0;
+      color: var(--slate200);
+      font-size: 32px;
+      line-height: 1.35;
+      font-weight: 500;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.88);
+      border: 1.5px solid var(--slate700);
+      border-radius: 26px;
+      padding: 32px;
+    }
+    .card-kicker {
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .card-title {
+      font-size: 30px;
+      font-weight: 900;
+      margin: 0 0 10px;
+      color: #FFFFFF;
+    }
+    .card-desc {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.4;
+      color: var(--slate200);
+    }
+    .device-preview {
+      background: #081020;
+      border: 3px solid var(--slate700);
+      border-radius: 36px;
+      padding: 34px;
+      box-shadow: 0 36px 80px rgba(0, 0, 0, 0.65);
+    }
+    .footer-cta {
+      background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(15,23,42,0.95));
+      border: 2px solid var(--amber500);
+      border-radius: 26px;
+      padding: 30px 36px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="studio-header">
+    <strong>VíaAlerta • Estudio de Flyers (PNG 1080px)</strong> — Estética editorial oscura sin caricaturas. Ejecutá <code>node export-flyers.mjs</code> para generar los 4 PNG listos en <code>dist/</code>.
+  </div>
+
+  <!-- FLYER 1: 1080x1920 COPILOTO VIAL -->
+  <div class="flyer-wrap">
+    <div class="flyer-label">FLYER 1 • 1080×1920 (Estados WhatsApp / Reels / Shorts)</div>
+    <article id="flyer-1-copiloto" class="flyer-vertical">
+      <div>
+        <div class="topbar">
+          <div class="logo-row">
+            <div class="logo-mark">VA</div>
+            <div>
+              <div style="font-size:32px;font-weight:900;">VíaAlerta</div>
+              <div style="font-size:19px;color:var(--amber400);font-weight:700;">RADAR VIAL ARGENTINO</div>
+            </div>
+          </div>
+          <div class="pill" style="background:rgba(16,185,129,0.16);border:1.5px solid var(--green500);color:var(--green400);">
+            GRATIS • ANDROID
+          </div>
+        </div>
+
+        <h1 class="hero-title" style="font-size:78px;">
+          El copiloto que<br /><span style="color:var(--amber400);">cuida tu ruta</span><br />en tiempo real.
+        </h1>
+        <p class="hero-sub">
+          Detectá pozos críticos, cortes, agua en calzada y radares antes de llegar — incluso sin señal 4G o con la pantalla apagada.
+        </p>
+      </div>
+
+      <div class="device-preview">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+          <span style="font-size:22px;font-weight:900;color:var(--cyan400);">🎙️ COPILOTO MANOS LIBRES ACTIVO</span>
+          <span style="font-size:20px;font-weight:800;color:var(--green400);">94 KM/H</span>
+        </div>
+        <div style="background:rgba(225,29,72,0.16);border:1.5px solid var(--red500);border-radius:20px;padding:24px;margin-bottom:20px;">
+          <div style="font-size:20px;font-weight:900;color:#FDA4AF;">⚠️ BACHE PROFUNDO A 350 METROS</div>
+          <div style="font-size:26px;font-weight:700;color:#FFFFFF;margin-top:8px;">«Reducí la velocidad en calzada derecha»</div>
+        </div>
+        <div style="display:flex;gap:16px;">
+          <div style="flex:1;background:var(--slate900);border:1px solid var(--slate700);border-radius:18px;padding:20px;">
+            <div style="font-size:17px;color:var(--slate400);font-weight:800;">ACELERÓMETRO</div>
+            <div style="font-size:24px;font-weight:900;margin-top:6px;">Detección automática</div>
+          </div>
+          <div style="flex:1;background:var(--slate900);border:1px solid var(--slate700);border-radius:18px;padding:20px;">
+            <div style="font-size:17px;color:var(--slate400);font-weight:800;">SIN SEÑAL 4G</div>
+            <div style="font-size:24px;font-weight:900;margin-top:6px;">Cola offline inteligente</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-kicker" style="color:var(--amber400);">01 • SIN TOCAR PANTALLA</div>
+          <h3 class="card-title">Voz continua real</h3>
+          <p class="card-desc">Reportá peligros o preguntá «¿Cuánto falta?» manejando con ambas manos.</p>
+        </div>
+        <div class="card">
+          <div class="card-kicker" style="color:var(--blue500);">02 • ANTI-FATIGA</div>
+          <h3 class="card-title">Descanso cada 2h / 3h</h3>
+          <p class="card-desc">Te avisa por voz cuando superás tu tiempo continuo al volante.</p>
+        </div>
+      </div>
+
+      <div class="footer-cta">
+        <div>
+          <div style="font-size:22px;color:var(--amber400);font-weight:900;">DESCARGÁ GRATIS HOY • MODO INVITADO</div>
+          <div style="font-size:31px;font-weight:900;margin-top:4px;">gen-lang-client-0699193083.web.app</div>
+        </div>
+        <div style="background:var(--amber500);color:#020617;padding:18px 28px;border-radius:16px;font-size:24px;font-weight:900;white-space:nowrap;">
+          7 DÍAS PRO GRATIS
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <!-- FLYER 2: 1080x1920 SEGUIME EN TIEMPO REAL -->
+  <div class="flyer-wrap">
+    <div class="flyer-label">FLYER 2 • 1080×1920 (Seguime en Vivo • Familias y Viajeros)</div>
+    <article id="flyer-2-seguime" class="flyer-vertical" style="background:radial-gradient(circle at 20% 18%, #0F2F4A 0%, #020617 65%);">
+      <div>
+        <div class="topbar">
+          <div class="logo-row">
+            <div class="logo-mark">VA</div>
+            <div>
+              <div style="font-size:32px;font-weight:900;">VíaAlerta</div>
+              <div style="font-size:19px;color:var(--blue500);font-weight:700;">SEGUIME EN TIEMPO REAL</div>
+            </div>
+          </div>
+          <div class="pill" style="background:rgba(56,189,248,0.16);border:1.5px solid var(--blue500);color:#BAE6FD;">
+            PRIVACIDAD TOTAL
+          </div>
+        </div>
+
+        <h1 class="hero-title" style="font-size:74px;">
+          Que tu familia<br />te acompañe<br /><span style="color:var(--blue500);">en cada kilómetro.</span>
+        </h1>
+        <p class="hero-sub">
+          Enviá un enlace privado por WhatsApp con tu ubicación, velocidad y destino en vivo. Sin que instalen nada extra.
+        </p>
+      </div>
+
+      <div class="device-preview" style="border-color:rgba(56,189,248,0.55);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+          <span style="font-size:24px;font-weight:900;">📍 Seguime en Vivo</span>
+          <span style="padding:8px 16px;border-radius:999px;background:rgba(34,197,94,0.18);color:#4ADE80;font-weight:900;font-size:18px;">🟢 En ruta • 102 km/h</span>
+        </div>
+        <div style="height:320px;border-radius:22px;background:radial-gradient(circle at 60% 45%, #163056 0%, #091224 85%);border:1px solid var(--slate700);display:flex;flex-direction:column;justify-content:space-between;padding:24px;margin-bottom:22px;">
+          <div style="font-size:21px;color:#BAE6FD;font-weight:700;">🎯 Destino: Mar del Plata • Ruta 2</div>
+          <div style="align-self:center;width:44px;height:44px;border-radius:999px;background:#22C55E;border:5px solid #FFFFFF;box-shadow:0 0 0 18px rgba(34,197,94,0.28);"></div>
+          <div style="font-size:19px;color:var(--slate200);">📡 En tramos sin señal conserva el último punto GPS y actualiza al volver cobertura.</div>
+        </div>
+        <div style="background:rgba(16,185,129,0.12);border:1.5px solid var(--green500);border-radius:18px;padding:20px 24px;font-size:23px;font-weight:700;color:#D1FAE5;">
+          🔒 Anti-espionaje: el enlace caduca y borra tus coordenadas automáticamente apenas llegás o cancelás.
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-kicker" style="color:var(--green400);">HASTA 8 HORAS MÁX.</div>
+          <h3 class="card-title">Cierre automático</h3>
+          <p class="card-desc">Se desactiva solo al llegar a destino, detener el viaje o cerrar la app.</p>
+        </div>
+        <div class="card">
+          <div class="card-kicker" style="color:var(--amber400);">MAPA PROPIO</div>
+          <h3 class="card-title">Directo en VíaAlerta</h3>
+          <p class="card-desc">Funciona desde el navegador o dentro de la app VíaAlerta sin Google Maps.</p>
+        </div>
+      </div>
+
+      <div class="footer-cta" style="border-color:var(--blue500);">
+        <div>
+          <div style="font-size:22px;color:var(--blue500);font-weight:900;">VIAJÁ TRANQUILO • AVISÁ AL LLEGAR</div>
+          <div style="font-size:31px;font-weight:900;margin-top:4px;">gen-lang-client-0699193083.web.app</div>
+        </div>
+        <div style="background:var(--blue500);color:#020617;padding:18px 28px;border-radius:16px;font-size:24px;font-weight:900;">
+          SEGUIME VIVO
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <!-- FLYER 3: 1080x1350 FEED RUTA Y TREN DELANTERO -->
+  <div class="flyer-wrap">
+    <div class="flyer-label">FLYER 3 • 1080×1350 (Instagram / Facebook Feed)</div>
+    <article id="flyer-3-ruta" class="flyer-feed">
+      <div>
+        <div class="topbar">
+          <div class="logo-row">
+            <div class="logo-mark">VA</div>
+            <div>
+              <div style="font-size:30px;font-weight:900;">VíaAlerta v2.1</div>
+              <div style="font-size:18px;color:var(--amber400);font-weight:700;">AVISÁ. CUIDÁ. CONDUCÍ MEJOR.</div>
+            </div>
+          </div>
+          <div class="pill" style="background:rgba(245,158,11,0.16);border:1.5px solid var(--amber500);color:var(--amber400);">
+            CUIDÁ TU VEHÍCULO
+          </div>
+        </div>
+
+        <h1 class="hero-title" style="font-size:66px;margin-top:34px;">
+          Un pozo que no ves<br />cuesta caro.<br /><span style="color:var(--amber400);">Anticipate con VíaAlerta.</span>
+        </h1>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-kicker" style="color:var(--red500);">RADAR POR SENTIDO</div>
+          <h3 class="card-title">Solo alertas de tu mano</h3>
+          <p class="card-desc">Filtra alertas del carril contrario y prioriza baches, obras, neblina y animales.</p>
+        </div>
+        <div class="card">
+          <div class="card-kicker" style="color:var(--cyan400);">VOZ MANOS LIBRES</div>
+          <h3 class="card-title">Sin soltar el volante</h3>
+          <p class="card-desc">Reportá, confirmá avisos y consultá tu hora de llegada hablando al teléfono.</p>
+        </div>
+        <div class="card">
+          <div class="card-kicker" style="color:var(--amber400);">MODO NOCTURNO</div>
+          <h3 class="card-title">Sin encandilamiento</h3>
+          <p class="card-desc">Mapa oscuro calibrado y velocímetro digital claro para manejar de noche.</p>
+        </div>
+        <div class="card">
+          <div class="card-kicker" style="color:var(--green400);">COLA OFFLINE</div>
+          <h3 class="card-title">Listo sin señal 4G</h3>
+          <p class="card-desc">Guardá reportes en zonas rurales y sincronizan al volver cobertura móvil.</p>
+        </div>
+      </div>
+
+      <div class="footer-cta">
+        <div>
+          <div style="font-size:20px;color:var(--amber400);font-weight:900;">PROBÁ EL MAPA EN MODO INVITADO O CON GOOGLE</div>
+          <div style="font-size:30px;font-weight:900;margin-top:4px;">gen-lang-client-0699193083.web.app</div>
+        </div>
+        <div style="background:var(--amber500);color:#020617;padding:16px 26px;border-radius:16px;font-size:22px;font-weight:900;">
+          DESCARGAR APK
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <!-- FLYER 4: 1080x1350 ECOSISTEMA COMPLETO / CLIENTES Y COMUNIDAD -->
+  <div class="flyer-wrap">
+    <div class="flyer-label">FLYER 4 • 1080×1350 (Presentación Comercial / Comunidad)</div>
+    <article id="flyer-4-ecosistema" class="flyer-feed" style="background:radial-gradient(circle at 80% 15%, #16332D 0%, #020617 65%);">
+      <div>
+        <div class="topbar">
+          <div class="logo-row">
+            <div class="logo-mark">VA</div>
+            <div>
+              <div style="font-size:30px;font-weight:900;">VíaAlerta</div>
+              <div style="font-size:18px;color:var(--green400);font-weight:700;">ECOSISTEMA DE RUTA SEGURA</div>
+            </div>
+          </div>
+          <div class="pill" style="background:rgba(16,185,129,0.16);border:1.5px solid var(--green500);color:var(--green400);">
+            100% SEGURIDAD VIAL
+          </div>
+        </div>
+
+        <h1 class="hero-title" style="font-size:64px;margin-top:34px;">
+          Mucho más que alertas:<br /><span style="color:var(--green400);">auxilio y comunidad real</span> en ruta.
+        </h1>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-kicker" style="color:var(--red500);">SOS ANTI-EMBOSCADAS</div>
+          <h3 class="card-title">Auxilio verificado</h3>
+          <p class="card-desc">DNI y patente verificados para pedir o brindar ayuda mecánica con confianza real.</p>
+        </div>
+        <div class="card">
+          <div class="card-kicker" style="color:var(--blue500);">SEGUIME + AVENTÓN</div>
+          <h3 class="card-title">Viajes acompañados</h3>
+          <p class="card-desc">Seguimiento temporal con caducidad automática y emparejamiento seguro por QR.</p>
+        </div>
+        <div class="card">
+          <div class="card-kicker" style="color:var(--amber400);">BAÚL VIAL</div>
+          <h3 class="card-title">Objetos en ruta</h3>
+          <p class="card-desc">Patentes, llaves o documentos encontrados con pregunta de validación de dueño.</p>
+        </div>
+        <div class="card">
+          <div class="card-kicker" style="color:var(--green400);">NIVELES Y REFERIDOS</div>
+          <h3 class="card-title">+7 días PRO gratis</h3>
+          <p class="card-desc">Compartí tu código VIA-XXXXXX y ganá días PRO junto a tus contactos.</p>
+        </div>
+      </div>
+
+      <div class="footer-cta" style="border-color:var(--green500);">
+        <div>
+          <div style="font-size:20px;color:var(--green400);font-weight:900;">ANDROID 7.0+ • SIN CONTROLES POLICIALES, FOCO EN SEGURIDAD</div>
+          <div style="font-size:30px;font-weight:900;margin-top:4px;">gen-lang-client-0699193083.web.app</div>
+        </div>
+        <div style="background:var(--green500);color:#020617;padding:16px 26px;border-radius:16px;font-size:22px;font-weight:900;">
+          SUMATE A LA RED
+        </div>
+      </div>
+    </article>
+  </div>
+</body>
+</html>
