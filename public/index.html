@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VíaAlerta v2.1 — Radar Vial Comunitario</title>
+    <title>VíaAlerta v2.2 — Radar Vial Comunitario</title>
     <style>
         :root {
             --bg: #020617;
@@ -145,7 +145,7 @@
 </head>
 <body>
     <main class="card">
-        <div class="badge">✓ LINK OFICIAL PERMANENTE • v2.1</div>
+        <div id="version-badge" class="badge">✓ LINK OFICIAL • v2.2</div>
         <h1>VíaAlerta</h1>
         <p class="subtitle">Avisá. Cuidá. Conducí mejor. El copiloto vial comunitario pensado para las rutas argentinas.</p>
 
@@ -153,23 +153,28 @@
             📲 Descargar VíaAlerta APK (Android)
         </a>
 
+        <div id="remote-update-notes" style="display:none;text-align:left;margin:10px 0 12px;padding:12px 14px;border-radius:12px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.45);color:#dcfce7;font-size:13px;line-height:1.45;">
+            <strong id="remote-update-title" style="color:#4ade80;display:block;margin-bottom:4px;"></strong>
+            <span id="remote-update-message"></span>
+        </div>
+
         <div id="fallback-note">
-            El paquete APK se actualiza automáticamente en cada compilación desde GitHub Releases (<code>ViaAlerta.apk</code>). Si acabás de compilar, verificá la última versión en tu pestaña <strong>Releases</strong> de GitHub o copiá el archivo <code>ViaAlerta.apk</code> al hosting.
+            Todavía no hay un link remoto publicado desde el Panel Maestro o el archivo <code>ViaAlerta.apk</code> no está subido al hosting. Si sos administrador, pegá el link de Drive o GitHub Releases desde la pestaña <strong>Actualizaciones APK</strong> del Panel Web Maestro.
         </div>
 
         <a href="/admin.html" class="btn-alt" style="border-color: rgba(245,158,11,0.55); color: #fbbf24;">
             🛡️ Abrir Panel Web Maestro (Admin)
         </a>
 
-        <div class="meta">Archivo oficial: ViaAlerta.apk • Android 7.0+ (API 24+) • Sin vencimiento de enlaces</div>
+        <div id="apk-meta" class="meta">Archivo oficial: ViaAlerta.apk • Android 7.0+ (API 24+)</div>
 
         <section class="panel">
-            <h3>Novedades en VíaAlerta v2.1</h3>
+            <h3 id="features-title">Novedades en VíaAlerta v2.2</h3>
             <ul>
-                <li><strong>Copiloto por Voz y Radar en Segundo Plano:</strong> Avisos de pozos críticos, calzada rota, obras, agua, neblina, animales y <strong>radares viales</strong> incluso con la pantalla apagada o usando otra app.</li>
-                <li><strong>Modo Invitado con Alertas en Vivo:</strong> Mirá peligros activos en el mapa al instante (solo lectura) sin necesidad de crear cuenta para probar la red.</li>
-                <li><strong>Sistema de Referidos (+7 días PRO):</strong> Compartí tu código <code>VIA-XXXXXX</code> y sumá <strong>+150 pts/XP y +7 días PRO gratis</strong> tanto para vos como para tu invitado.</li>
-                <li><strong>Chequeo Pre-Viaje Adaptable:</strong> Recordatorio breve por voz adaptado a Auto, Moto o Camión (desactivable en Perfil o por voz).</li>
+                <li><strong>Copiloto por Voz Inteligente:</strong> Preguntá cuánto falta para tu destino o localidad, consultá peligros adelante o buscá <strong>estaciones de servicio y GNC</strong> en ruta con cancelación de eco.</li>
+                <li><strong>Rutas Limpias y Modo Nocturno:</strong> Alternativas reales sin desvíos innecesarios, vista panorámica con 1 toque y mapa nocturno oscuro para descansar la vista.</li>
+                <li><strong>Seguime en Tiempo Real:</strong> Compartí tu recorrido en vivo por WhatsApp con un link privado que se actualiza aunque pierdas señal momentáneamente.</li>
+                <li><strong>Modo Invitado y Referidos (+7 días PRO):</strong> Probá el mapa en vivo sin cuenta o sumá <strong>+150 pts/XP y +7 días PRO</strong> con tu código <code>VIA-XXXXXX</code>.</li>
                 <li><strong>Aventón Seguro, Baúl Vial y SOS:</strong> Viajes compartidos con QR, objetos perdidos verificados y pedido de auxilio rápido.</li>
             </ul>
         </section>
@@ -178,7 +183,7 @@
             <h3>Cómo instalar el APK en 3 pasos</h3>
             <ol>
                 <li>Tocá <strong>«Descargar VíaAlerta APK»</strong> y aguardá a que finalice la descarga.</li>
-                <li>Abrí el archivo <code>ViaAlerta.apk</code> desde tus notificaciones o la carpeta <em>Descargas</em>; si Android te lo solicita, habilitá <em>«Permitir desde esta fuente»</em>.</li>
+                <li>Abrí el archivo <code>.apk</code> desde tus notificaciones o la carpeta <em>Descargas</em>; si Android te lo solicita, habilitá <em>«Permitir desde esta fuente»</em>.</li>
                 <li>Ingresá en <strong>Modo Invitado</strong> para ver el mapa o iniciá sesión con <strong>Google</strong> para recibir tus <strong>7 días PRO de bienvenida</strong>.</li>
             </ol>
         </section>
@@ -188,21 +193,75 @@
         </p>
     </main>
 
-    <script>
-        (function () {
-            const btn = document.getElementById('apk-direct-btn');
-            const note = document.getElementById('fallback-note');
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+        const btn = document.getElementById('apk-direct-btn');
+        const note = document.getElementById('fallback-note');
+        const badge = document.getElementById('version-badge');
+        const meta = document.getElementById('apk-meta');
+        const remoteNotesBox = document.getElementById('remote-update-notes');
+        const remoteTitle = document.getElementById('remote-update-title');
+        const remoteMsg = document.getElementById('remote-update-message');
+
+        function isValidHttpUrl(url) {
+            const clean = (url || '').trim();
+            if (!clean || clean.length > 500 || clean.includes(' ')) return false;
+            const lower = clean.toLowerCase();
+            const rest = lower.startsWith('https://')
+                ? clean.slice(8)
+                : (lower.startsWith('http://') ? clean.slice(7) : '');
+            return rest.length >= 4 && rest.includes('.');
+        }
+
+        async function checkLocalApkFallback() {
             if (!btn || !note) return;
-            fetch('/ViaAlerta.apk', { method: 'HEAD' })
-                .then(function (res) {
-                    if (!res.ok) {
-                        note.style.display = 'block';
-                    }
-                })
-                .catch(function () {
-                    note.style.display = 'block';
+            try {
+                const res = await fetch('/ViaAlerta.apk', { method: 'HEAD' });
+                if (!res.ok) note.style.display = 'block';
+            } catch (_) {
+                note.style.display = 'block';
+            }
+        }
+
+        async function loadPublishedVersion() {
+            try {
+                const app = initializeApp({
+                    apiKey: "AIzaSyBQttE7Xh8DHq1y2tGSrjU9CJxtX7nW_wA",
+                    authDomain: "gen-lang-client-0699193083.firebaseapp.com",
+                    projectId: "gen-lang-client-0699193083"
                 });
-        })();
+                const db = getFirestore(app, "ai-studio-android-vaalerta-3533dd73-4db6-41b5-819b-be628adc8d93");
+                const snap = await getDoc(doc(db, "app_config", "app_update"));
+                if (snap.exists()) {
+                    const cfg = snap.data() || {};
+                    const url = (cfg.downloadUrl || '').trim();
+                    if (cfg.enabled && isValidHttpUrl(url)) {
+                        const verLabel = (cfg.latestVersionName || '').trim() || `código ${cfg.latestVersionCode || ''}`;
+                        btn.href = url;
+                        btn.target = "_blank";
+                        btn.rel = "noopener noreferrer";
+                        btn.removeAttribute('download');
+                        btn.textContent = `📲 Descargar VíaAlerta v${verLabel} (Android APK)`;
+                        if (badge) badge.textContent = `✓ ÚLTIMA VERSIÓN PUBLICADA • v${verLabel}`;
+                        if (meta) meta.textContent = `Versión vigente v${verLabel} (código ${cfg.latestVersionCode || '-'}) • Android 7.0+`;
+                        if (cfg.message && remoteNotesBox && remoteTitle && remoteMsg) {
+                            remoteTitle.textContent = `Novedades de la versión v${verLabel}:`;
+                            remoteMsg.textContent = cfg.message;
+                            remoteNotesBox.style.display = 'block';
+                        }
+                        if (note) note.style.display = 'none';
+                        return;
+                    }
+                }
+            } catch (_) {
+                // Si falla la lectura remota, cae al fallback local
+            }
+            await checkLocalApkFallback();
+        }
+
+        loadPublishedVersion();
     </script>
 </body>
 </html>

@@ -165,16 +165,17 @@
       margin-bottom: 16px;
     }
     .panel-title { margin: 0; font-size: 17px; font-weight: 800; }
-    input, select {
+    input, select, textarea {
       background: var(--bg);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 9px 12px;
       font-size: 13px;
+      font-family: inherit;
       outline: none;
     }
-    input:focus, select:focus { border-color: var(--amber); }
+    input:focus, select:focus, textarea:focus { border-color: var(--amber); }
 
     #live-map {
       width: 100%;
@@ -321,6 +322,7 @@
         <button class="tab-btn" data-tab="licenses">🪪 Licencias PRO</button>
         <button class="tab-btn" data-tab="users">👥 Usuarios y Beta</button>
         <button class="tab-btn" data-tab="features">🚀 Módulos y Beta</button>
+        <button class="tab-btn" data-tab="updates">📲 Actualizaciones APK</button>
         <button class="tab-btn" data-tab="baul">🧳 Baúl Vial</button>
         <button class="tab-btn" data-tab="sos">🚨 SOS y Aventones</button>
       </nav>
@@ -521,6 +523,58 @@
         </div>
       </section>
 
+      <!-- TAB: APP UPDATES (OTA + WEB LANDING) -->
+      <section id="tab-updates" class="panel hidden">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">📲 Publicar Nueva Versión (App Android + Página Web)</h2>
+            <div style="font-size:12px;color:var(--muted);">
+              Pegá el link de tu APK en Google Drive o GitHub Releases. Sincroniza el cartel de aviso dentro de la app y el botón de descarga en <code>index.html</code>.
+            </div>
+          </div>
+          <span id="update-status-badge" class="tag tag-slate">INACTIVO</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:12px;">
+          <div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Código de versión (versionCode)</div>
+            <input type="number" id="input-update-code" min="1" max="1000000" placeholder="4" style="width:100%;" />
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Nombre de versión (ej: 2.3)</div>
+            <input type="text" id="input-update-name" maxlength="32" placeholder="2.3" style="width:100%;" />
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Link directo de descarga (Google Drive o GitHub Releases)</div>
+          <input type="url" id="input-update-url" maxlength="500" placeholder="https://drive.google.com/file/d/.../view" style="width:100%;" />
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Mensaje / Novedades para los conductores</div>
+          <textarea id="input-update-message" rows="3" maxlength="500" placeholder="Ej: Mejoras en rutas alternativas y comandos por voz." style="width:100%;resize:vertical;"></textarea>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:18px;margin-bottom:16px;padding:12px 14px;background:var(--bg);border:1px solid var(--surface-2);border-radius:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700;">
+            <input type="checkbox" id="input-update-enabled" style="width:18px;height:18px;accent-color:var(--green);" />
+            Mostrar aviso en la app y actualizar link en la web
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700;">
+            <input type="checkbox" id="input-update-mandatory" style="width:18px;height:18px;accent-color:var(--amber);" />
+            Actualización obligatoria (oculta «Más tarde» en la app)
+          </label>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+          <button id="btn-save-app-update" class="btn btn-green">🚀 Publicar Aviso de Actualización</button>
+          <button id="btn-disable-app-update" class="btn btn-red">🔕 Desactivar Aviso</button>
+          <button id="btn-test-app-update-url" class="btn btn-blue">🔗 Probar Link</button>
+          <a href="/index.html" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="text-decoration:none;">🌐 Ver Web de Descarga</a>
+        </div>
+      </section>
+
       <!-- TAB: BAUL VIAL -->
       <section id="tab-baul" class="panel hidden">
         <div class="panel-header">
@@ -645,6 +699,8 @@
       hitchhikes: [],
       features: { ...DEFAULT_FEATURES },
       billing: { mercadoPagoAlias: "vialerta.oficial.mp", proPriceArs: 5000, paymentLinkUrl: "" },
+      appUpdate: { enabled: false, mandatory: false, latestVersionCode: 4, latestVersionName: "", message: "", downloadUrl: "" },
+      updateDraftDirty: false,
       unsubs: [],
       map: null,
       markerLayer: null
@@ -707,7 +763,7 @@
         document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         const target = btn.dataset.tab;
-        ["map", "alerts", "drivers", "licenses", "users", "features", "baul", "sos"].forEach((name) => {
+        ["map", "alerts", "drivers", "licenses", "users", "features", "updates", "baul", "sos"].forEach((name) => {
           $(`tab-${name}`).classList.toggle("hidden", name !== target);
         });
         if (target === "map" && state.map) {
@@ -1152,6 +1208,104 @@
       }
     });
 
+    function isValidUpdateUrl(url) {
+      const clean = (url || "").trim();
+      if (!clean || clean.length > 500 || clean.includes(" ")) return false;
+      const lower = clean.toLowerCase();
+      const rest = lower.startsWith("https://")
+        ? clean.slice(8)
+        : (lower.startsWith("http://") ? clean.slice(7) : "");
+      return rest.length >= 4 && rest.includes(".");
+    }
+
+    function renderAppUpdateBadge(cfg) {
+      const badge = $("update-status-badge");
+      if (!badge) return;
+      if (cfg && cfg.enabled) {
+        badge.className = "tag tag-green";
+        badge.textContent = `ACTIVO v${cfg.latestVersionName || cfg.latestVersionCode || ""}`;
+      } else {
+        badge.className = "tag tag-slate";
+        badge.textContent = "INACTIVO";
+      }
+    }
+
+    ["input-update-code", "input-update-name", "input-update-url", "input-update-message", "input-update-enabled", "input-update-mandatory"].forEach((id) => {
+      $(id)?.addEventListener("input", () => { state.updateDraftDirty = true; });
+      $(id)?.addEventListener("change", () => { state.updateDraftDirty = true; });
+    });
+
+    $("btn-save-app-update")?.addEventListener("click", async () => {
+      try {
+        const enabled = Boolean($("input-update-enabled").checked);
+        const mandatory = Boolean($("input-update-mandatory").checked);
+        const code = parseInt($("input-update-code").value, 10);
+        const name = ($("input-update-name").value || "").trim().slice(0, 32);
+        const url = ($("input-update-url").value || "").trim().slice(0, 500);
+        const message = ($("input-update-message").value || "").trim().slice(0, 500);
+
+        if (!Number.isInteger(code) || code < 1 || code > 1000000) {
+          showToast("⚠️ Ingresá un código de versión válido (entre 1 y 1000000).");
+          return;
+        }
+        if (enabled && !name) {
+          showToast("⚠️ Ingresá el nombre de versión (ej: 2.3).");
+          return;
+        }
+        if (enabled && !isValidUpdateUrl(url)) {
+          showToast("⚠️ Pegá un link válido que empiece con https:// o http://");
+          return;
+        }
+
+        await setDoc(doc(db, "app_config", "app_update"), {
+          enabled,
+          mandatory,
+          latestVersionCode: code,
+          latestVersionName: name || `v${code}`,
+          message,
+          downloadUrl: url,
+          updatedAt: serverTimestamp()
+        });
+        state.updateDraftDirty = false;
+        showToast(enabled ? `📲 Aviso v${name || code} publicado en app y web` : "🔕 Aviso de actualización guardado como inactivo");
+      } catch (e) {
+        showToast(`⚠️ Error publicando actualización: ${e.message}`);
+      }
+    });
+
+    $("btn-disable-app-update")?.addEventListener("click", async () => {
+      try {
+        const cur = state.appUpdate || {};
+        const code = Math.max(1, Math.min(1000000, parseInt($("input-update-code").value, 10) || cur.latestVersionCode || 1));
+        const name = ($("input-update-name").value || cur.latestVersionName || `v${code}`).trim().slice(0, 32);
+        const url = ($("input-update-url").value || cur.downloadUrl || "").trim().slice(0, 500);
+        const message = ($("input-update-message").value || cur.message || "").trim().slice(0, 500);
+        await setDoc(doc(db, "app_config", "app_update"), {
+          enabled: false,
+          mandatory: Boolean(cur.mandatory),
+          latestVersionCode: code,
+          latestVersionName: name,
+          message,
+          downloadUrl: url,
+          updatedAt: serverTimestamp()
+        });
+        $("input-update-enabled").checked = false;
+        state.updateDraftDirty = false;
+        showToast("🔕 Aviso de actualización desactivado");
+      } catch (e) {
+        showToast(`⚠️ Error desactivando aviso: ${e.message}`);
+      }
+    });
+
+    $("btn-test-app-update-url")?.addEventListener("click", () => {
+      const url = ($("input-update-url").value || "").trim();
+      if (!isValidUpdateUrl(url)) {
+        showToast("⚠️ Ingresá primero un link http(s) válido para probar.");
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+
     window.__setFeatureMode = async (key, mode) => {
       try {
         const nextPayload = { ...DEFAULT_FEATURES, ...state.features, [key]: mode, updatedAt: serverTimestamp() };
@@ -1232,6 +1386,19 @@
             if ($("input-mp-link")) $("input-mp-link").value = b.paymentLinkUrl || "";
           }
         }, onErr("app_config/billing")),
+        onSnapshot(doc(db, "app_config", "app_update"), (snap) => {
+          const cfg = snap.exists() ? snap.data() : { enabled: false, mandatory: false, latestVersionCode: 4, latestVersionName: "", message: "", downloadUrl: "" };
+          state.appUpdate = cfg;
+          renderAppUpdateBadge(cfg);
+          if (!state.updateDraftDirty) {
+            if ($("input-update-code")) $("input-update-code").value = cfg.latestVersionCode || 4;
+            if ($("input-update-name")) $("input-update-name").value = cfg.latestVersionName || "";
+            if ($("input-update-url")) $("input-update-url").value = cfg.downloadUrl || "";
+            if ($("input-update-message")) $("input-update-message").value = cfg.message || "";
+            if ($("input-update-enabled")) $("input-update-enabled").checked = Boolean(cfg.enabled);
+            if ($("input-update-mandatory")) $("input-update-mandatory").checked = Boolean(cfg.mandatory);
+          }
+        }, onErr("app_config/app_update")),
         onSnapshot(collection(db, "baul_vial"), (snap) => {
           state.baul = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           renderAll();
