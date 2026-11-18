@@ -9,6 +9,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -18,16 +19,35 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -39,16 +59,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.credentials.CredentialManager
 import com.example.data.model.AppBillingConfig
 import com.example.data.model.AppFeatureFlags
+import com.example.data.model.AppUpdateConfig
 import com.example.data.model.RoadLevels
 import com.example.data.model.UserProfile
 import com.example.data.repository.BaulVialRepository
@@ -387,6 +412,24 @@ fun MainScaffold(
     }
     val featureFlags by featureFlagsRepo.observeFeatureFlags()
         .collectAsState(initial = FeatureFlagsRepository.getCachedFeatureFlags(context))
+    val appUpdateConfig by featureFlagsRepo.observeAppUpdateConfig()
+        .collectAsState(initial = FeatureFlagsRepository.getCachedAppUpdateConfig(context))
+    var dismissedUpdateVersionCode by remember {
+        mutableIntStateOf(DriverPreferences.getDismissedUpdateVersionCode(context))
+    }
+    val installedVersionInfo = remember(context) {
+        try {
+            val pkgInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            Pair(
+                PackageInfoCompat.getLongVersionCode(pkgInfo).toInt(),
+                pkgInfo.versionName ?: BuildConfig.VERSION_NAME
+            )
+        } catch (_: Throwable) {
+            Pair(BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME)
+        }
+    }
+    val installedVersionCode = installedVersionInfo.first
+    val installedVersionName = installedVersionInfo.second
 
     val currentUserEmail = if (isGuestMode) "" else Firebase.auth.currentUser?.email?.lowercase()?.trim() ?: ""
     val isOwnerOrAdmin = !isGuestMode && (currentUserEmail == "redmond262@gmail.com" ||
@@ -908,6 +951,124 @@ fun MainScaffold(
         if (showOnboardingDialog) {
             com.example.ui.components.OnboardingTutorialDialog(
                 onDismiss = { showOnboardingDialog = false }
+            )
+        }
+
+        val shouldShowAppUpdateDialog = !showOnboardingDialog &&
+            FeatureFlagsRepository.shouldPromptAppUpdate(
+                installedVersionCode = installedVersionCode,
+                config = appUpdateConfig,
+                dismissedVersionCode = dismissedUpdateVersionCode
+            )
+        if (shouldShowAppUpdateDialog) {
+            val canDismissUpdate = !appUpdateConfig.mandatory || isOwnerOrAdmin
+            AlertDialog(
+                onDismissRequest = {
+                    if (canDismissUpdate) {
+                        dismissedUpdateVersionCode = appUpdateConfig.latestVersionCode
+                        DriverPreferences.setDismissedUpdateVersionCode(context, appUpdateConfig.latestVersionCode)
+                    }
+                },
+                properties = DialogProperties(
+                    dismissOnBackPress = canDismissUpdate,
+                    dismissOnClickOutside = canDismissUpdate
+                ),
+                containerColor = Slate900,
+                titleContentColor = Color.White,
+                textContentColor = Color.White.copy(alpha = 0.85f),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = Amber400,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = if (appUpdateConfig.mandatory) {
+                                "Actualización requerida"
+                            } else {
+                                "Nueva versión disponible"
+                            },
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp
+                        )
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(
+                            color = Amber500.copy(alpha = 0.16f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Amber400.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Instalada: v$installedVersionName  →  Nueva: v${appUpdateConfig.latestVersionName.ifBlank { appUpdateConfig.latestVersionCode.toString() }}",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Amber400,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                        Text(
+                            text = appUpdateConfig.message.ifBlank {
+                                "Hay una nueva versión de VíaAlerta lista para descargar e instalar con mejoras y correcciones."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Se abrirá tu navegador para descargar la nueva APK e instalarla sin perder tus datos.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.65f)
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(appUpdateConfig.downloadUrl.trim())).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Throwable) {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("⚠️ No se pudo abrir el enlace de descarga en el navegador.")
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Amber500,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("app_update_download_btn")
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Descargar versión", fontWeight = FontWeight.Black)
+                    }
+                },
+                dismissButton = if (canDismissUpdate) {
+                    {
+                        TextButton(
+                            onClick = {
+                                dismissedUpdateVersionCode = appUpdateConfig.latestVersionCode
+                                DriverPreferences.setDismissedUpdateVersionCode(context, appUpdateConfig.latestVersionCode)
+                            },
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("app_update_later_btn")
+                        ) {
+                            Text(
+                                text = if (appUpdateConfig.mandatory && isOwnerOrAdmin) "Cerrar (Admin)" else "Más tarde",
+                                color = Color.White.copy(alpha = 0.75f),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                } else null
             )
         }
     }

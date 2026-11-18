@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.data.model.AppUpdateConfig
 import com.example.data.model.FeatureMode
 import com.example.data.model.RoadAlert
 import com.example.data.model.RoadLevels
@@ -568,6 +569,41 @@ class DriverLogicUnitTest {
 
         assertTrue(VoiceCopilotManager.isStopNavigationCommand(listOf("detener navegación")))
         assertTrue(VoiceCopilotManager.isRecalculateRouteCommand(listOf("recalcular ruta")))
+    }
+
+    @Test
+    fun appUpdatePrompt_validatesUrlsVersionsAndDismissalRules() {
+        assertTrue(FeatureFlagsRepository.isValidUpdateDownloadUrl("https://drive.google.com/file/d/12345/view"))
+        assertTrue(FeatureFlagsRepository.isValidUpdateDownloadUrl("https://github.com/user/viaalerta/releases/latest/download/app.apk"))
+        assertFalse(FeatureFlagsRepository.isValidUpdateDownloadUrl(""))
+        assertFalse(FeatureFlagsRepository.isValidUpdateDownloadUrl("ftp://example.com/app.apk"))
+        assertFalse(FeatureFlagsRepository.isValidUpdateDownloadUrl("https://localhost"))
+        assertFalse(FeatureFlagsRepository.isValidUpdateDownloadUrl("https://example.com/my app.apk"))
+
+        val activeUpdate = AppUpdateConfig(
+            enabled = true,
+            mandatory = false,
+            latestVersionCode = 4,
+            latestVersionName = "2.3",
+            message = "Nueva versión lista",
+            downloadUrl = "https://drive.google.com/file/d/12345/view"
+        )
+
+        // Installed v3 < published v4 -> should prompt
+        assertTrue(FeatureFlagsRepository.shouldPromptAppUpdate(3, activeUpdate, dismissedVersionCode = 0))
+        // Installed v4 == published v4 -> should NOT prompt
+        assertFalse(FeatureFlagsRepository.shouldPromptAppUpdate(4, activeUpdate, dismissedVersionCode = 0))
+        // Installed v5 > published v4 -> should NOT prompt
+        assertFalse(FeatureFlagsRepository.shouldPromptAppUpdate(5, activeUpdate, dismissedVersionCode = 0))
+        // Disabled notice -> should NOT prompt
+        assertFalse(FeatureFlagsRepository.shouldPromptAppUpdate(3, activeUpdate.copy(enabled = false), dismissedVersionCode = 0))
+        // Invalid URL -> should NOT prompt
+        assertFalse(FeatureFlagsRepository.shouldPromptAppUpdate(3, activeUpdate.copy(downloadUrl = "not-a-url"), dismissedVersionCode = 0))
+        // Optional update dismissed for v4 -> skipped for v4, but prompts again if v5 is published
+        assertFalse(FeatureFlagsRepository.shouldPromptAppUpdate(3, activeUpdate, dismissedVersionCode = 4))
+        assertTrue(FeatureFlagsRepository.shouldPromptAppUpdate(3, activeUpdate.copy(latestVersionCode = 5), dismissedVersionCode = 4))
+        // Mandatory update ignores previous optional dismissal
+        assertTrue(FeatureFlagsRepository.shouldPromptAppUpdate(3, activeUpdate.copy(mandatory = true), dismissedVersionCode = 4))
     }
 }
 

@@ -44,6 +44,9 @@ object DriverPreferences {
     private const val KEY_FATIGUE_STATIONARY_SINCE_MS = "fatigue_stationary_since_ms"
     private const val KEY_FATIGUE_LAST_ALERT_MS = "fatigue_last_alert_ms"
 
+    // App update prompt dismissal tracking
+    private const val KEY_DISMISSED_UPDATE_VERSION_CODE = "dismissed_update_version_code"
+
     const val VEHICLE_AUTO = "AUTO"
     const val VEHICLE_MOTO = "MOTO"
     const val VEHICLE_CAMION = "CAMION"
@@ -145,6 +148,17 @@ object DriverPreferences {
                 hour >= 20 || hour < 6
             }
         }
+    }
+
+    fun getDismissedUpdateVersionCode(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_DISMISSED_UPDATE_VERSION_CODE, 0)
+            .coerceAtLeast(0)
+    }
+
+    fun setDismissedUpdateVersionCode(context: Context, versionCode: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putInt(KEY_DISMISSED_UPDATE_VERSION_CODE, versionCode.coerceAtLeast(0)).apply()
     }
 
     // --- Vehicle Type & Pre-Trip Safety Checklist (1.5) ---

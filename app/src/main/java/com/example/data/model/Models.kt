@@ -1,5 +1,6 @@
 package com.example.data.model
 
+import androidx.annotation.Keep
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
@@ -117,6 +118,19 @@ data class AppFeatureFlags(
     val proConversionMode: String = FeatureMode.BETA,
     val referralsMode: String = FeatureMode.PUBLIC,
     val preTripChecklistMode: String = FeatureMode.PUBLIC,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class AppUpdateConfig(
+    @DocumentId val id: String = "app_update",
+    val enabled: Boolean = false,
+    val mandatory: Boolean = false,
+    val latestVersionCode: Int = 1,
+    val latestVersionName: String = "",
+    val message: String = "",
+    val downloadUrl: String = "",
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
 

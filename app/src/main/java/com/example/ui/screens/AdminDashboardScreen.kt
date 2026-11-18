@@ -20,19 +20,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sos
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -50,9 +56,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,11 +75,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.HorizontalDivider
+import com.example.BuildConfig
 import com.example.data.model.AppFeatureFlags
+import com.example.data.model.AppUpdateConfig
 import com.example.data.model.FeatureMode
 import com.example.data.model.OnlineDriver
 import com.example.data.model.RoadAlert
@@ -116,6 +128,8 @@ fun AdminDashboardScreen(
     val activeFlagsRepo = remember(context) { featureFlagsRepository ?: FeatureFlagsRepository(context) }
     val featureFlags by activeFlagsRepo.observeFeatureFlags()
         .collectAsState(initial = FeatureFlagsRepository.getCachedFeatureFlags(context))
+    val appUpdateConfig by activeFlagsRepo.observeAppUpdateConfig()
+        .collectAsState(initial = FeatureFlagsRepository.getCachedAppUpdateConfig(context))
     val registeredUsers by userRepository.observeAllUsersForAdmin().collectAsState(initial = emptyList())
 
     var ownerOverrideMode by remember { mutableStateOf(UserRepository.getOwnerOverrideMode(context)) }
@@ -129,7 +143,42 @@ fun AdminDashboardScreen(
     var proPriceArs by remember { mutableStateOf("5000") }
     var isProcessingAction by remember { mutableStateOf(false) }
 
-    androidx.compose.runtime.LaunchedEffect(Unit) {
+    // App update notice draft state
+    var updateEnabled by remember { mutableStateOf(appUpdateConfig.enabled) }
+    var updateMandatory by remember { mutableStateOf(appUpdateConfig.mandatory) }
+    var updateVersionCodeInput by remember {
+        mutableStateOf(
+            if (appUpdateConfig.latestVersionCode > BuildConfig.VERSION_CODE) {
+                appUpdateConfig.latestVersionCode.toString()
+            } else {
+                (BuildConfig.VERSION_CODE + 1).toString()
+            }
+        )
+    }
+    var updateVersionNameInput by remember {
+        mutableStateOf(appUpdateConfig.latestVersionName.ifBlank { "" })
+    }
+    var updateDownloadUrlInput by remember { mutableStateOf(appUpdateConfig.downloadUrl) }
+    var updateMessageInput by remember { mutableStateOf(appUpdateConfig.message) }
+    var isUpdateDraftDirty by remember { mutableStateOf(false) }
+    var isSavingUpdateConfig by remember { mutableStateOf(false) }
+
+    LaunchedEffect(appUpdateConfig) {
+        if (!isUpdateDraftDirty) {
+            updateEnabled = appUpdateConfig.enabled
+            updateMandatory = appUpdateConfig.mandatory
+            updateVersionCodeInput = if (appUpdateConfig.latestVersionCode > BuildConfig.VERSION_CODE || appUpdateConfig.enabled) {
+                appUpdateConfig.latestVersionCode.toString()
+            } else {
+                (BuildConfig.VERSION_CODE + 1).toString()
+            }
+            updateVersionNameInput = appUpdateConfig.latestVersionName
+            updateDownloadUrlInput = appUpdateConfig.downloadUrl
+            updateMessageInput = appUpdateConfig.message
+        }
+    }
+
+    LaunchedEffect(Unit) {
         val cfg = billingRepo.getBillingConfig()
         if (cfg.mercadoPagoAlias.isNotBlank()) mercadoPagoAlias = cfg.mercadoPagoAlias
         if (cfg.proPriceArs > 0) proPriceArs = cfg.proPriceArs.toString()
@@ -523,6 +572,409 @@ fun AdminDashboardScreen(
                         testTagPrefix = "flag_pretrip",
                         onSelectMode = { mode -> updateFlag("Chequeo Pre-Viaje") { it.copy(preTripChecklistMode = mode) } }
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(22.dp))
+
+            // Section 0A: Remote App Update Notice Publisher (Drive / GitHub Releases APK link)
+            Text(
+                text = "📲 PUBLICAR NUEVA VERSIÓN (AVISO DE ACTUALIZACIÓN)",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = SafetyGreen500
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Slate900),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(
+                    1.5.dp,
+                    if (appUpdateConfig.enabled) SafetyGreen500 else Slate800
+                ),
+                modifier = Modifier.fillMaxWidth().testTag("admin_app_update_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                tint = if (appUpdateConfig.enabled) SafetyGreen500 else Amber400,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Actualización directa por link",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Esta app instalada: v${BuildConfig.VERSION_NAME} (código ${BuildConfig.VERSION_CODE})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.65f)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            color = if (appUpdateConfig.enabled) SafetyGreen500.copy(alpha = 0.2f) else Slate800,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (appUpdateConfig.enabled) SafetyGreen500 else Slate700
+                            )
+                        ) {
+                            Text(
+                                text = if (appUpdateConfig.enabled) {
+                                    "ACTIVO v${appUpdateConfig.latestVersionName.ifBlank { appUpdateConfig.latestVersionCode.toString() }}"
+                                } else {
+                                    "INACTIVO"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black,
+                                color = if (appUpdateConfig.enabled) SafetyGreen500 else Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Subí la nueva APK firmada a Google Drive o GitHub Releases y pegá el link acá. Los conductores con un código de versión menor verán el cartel al abrir VíaAlerta.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.72f),
+                        lineHeight = 17.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            isUpdateDraftDirty = true
+                            val nextCode = BuildConfig.VERSION_CODE + 1
+                            updateVersionCodeInput = nextCode.toString()
+                            if (updateVersionNameInput.isBlank() || updateVersionNameInput == BuildConfig.VERSION_NAME) {
+                                updateVersionNameInput = "2.${nextCode}"
+                            }
+                            updateEnabled = true
+                        },
+                        border = BorderStroke(1.dp, RouteBlue500.copy(alpha = 0.7f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = RouteBlue500),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("update_prefill_next_btn")
+                    ) {
+                        Text(
+                            text = "Preparar siguiente versión (código ${BuildConfig.VERSION_CODE + 1})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = updateVersionCodeInput,
+                            onValueChange = { raw ->
+                                isUpdateDraftDirty = true
+                                updateVersionCodeInput = raw.filter { it.isDigit() }.take(6)
+                            },
+                            label = { Text("Código versión") },
+                            placeholder = { Text("${BuildConfig.VERSION_CODE + 1}") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f).testTag("update_version_code_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = SafetyGreen500,
+                                unfocusedBorderColor = Slate700,
+                                focusedLabelColor = SafetyGreen500
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = updateVersionNameInput,
+                            onValueChange = {
+                                isUpdateDraftDirty = true
+                                updateVersionNameInput = it.take(32)
+                            },
+                            label = { Text("Nombre (ej: 2.3)") },
+                            placeholder = { Text("2.3") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("update_version_name_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = SafetyGreen500,
+                                unfocusedBorderColor = Slate700,
+                                focusedLabelColor = SafetyGreen500
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = updateDownloadUrlInput,
+                        onValueChange = {
+                            isUpdateDraftDirty = true
+                            updateDownloadUrlInput = it.take(500)
+                        },
+                        label = { Text("Link directo de descarga (Drive o GitHub)") },
+                        placeholder = { Text("https://drive.google.com/file/d/.../view") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("update_download_url_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RouteBlue500,
+                            unfocusedBorderColor = Slate700,
+                            focusedLabelColor = RouteBlue500
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = updateMessageInput,
+                        onValueChange = {
+                            isUpdateDraftDirty = true
+                            updateMessageInput = it.take(500)
+                        },
+                        label = { Text("Novedades para los conductores") },
+                        placeholder = { Text("Ej: Mejoras en rutas alternativas y copiloto por voz.") },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth().testTag("update_message_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = SafetyGreen500,
+                            unfocusedBorderColor = Slate700,
+                            focusedLabelColor = SafetyGreen500
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable {
+                                isUpdateDraftDirty = true
+                                updateEnabled = !updateEnabled
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                text = "Mostrar aviso de actualización",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Solo aparece si el teléfono tiene un código menor",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.65f)
+                            )
+                        }
+                        Switch(
+                            checked = updateEnabled,
+                            onCheckedChange = {
+                                isUpdateDraftDirty = true
+                                updateEnabled = it
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = SafetyGreen500
+                            ),
+                            modifier = Modifier.testTag("update_enabled_switch")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable {
+                                isUpdateDraftDirty = true
+                                updateMandatory = !updateMandatory
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                text = "Actualización obligatoria",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Oculta el botón 'Más tarde' a los conductores",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.65f)
+                            )
+                        }
+                        Switch(
+                            checked = updateMandatory,
+                            onCheckedChange = {
+                                isUpdateDraftDirty = true
+                                updateMandatory = it
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Amber500
+                            ),
+                            modifier = Modifier.testTag("update_mandatory_switch")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Button(
+                        enabled = !isSavingUpdateConfig,
+                        onClick = {
+                            coroutineScope.launch {
+                                val parsedCode = updateVersionCodeInput.toIntOrNull()
+                                if (parsedCode == null || parsedCode < 1) {
+                                    snackbarHostState.showSnackbar("⚠️ Ingresá un código de versión numérico (ej: ${BuildConfig.VERSION_CODE + 1}).")
+                                    return@launch
+                                }
+                                val cleanName = updateVersionNameInput.trim()
+                                val cleanUrl = updateDownloadUrlInput.trim()
+                                if (updateEnabled && cleanName.isBlank()) {
+                                    snackbarHostState.showSnackbar("⚠️ Ingresá el nombre de la nueva versión (ej: 2.3).")
+                                    return@launch
+                                }
+                                if (updateEnabled && !FeatureFlagsRepository.isValidUpdateDownloadUrl(cleanUrl)) {
+                                    snackbarHostState.showSnackbar("⚠️ Pegá un link válido que empiece con https:// o http://")
+                                    return@launch
+                                }
+                                isSavingUpdateConfig = true
+                                val draft = AppUpdateConfig(
+                                    enabled = updateEnabled,
+                                    mandatory = updateMandatory,
+                                    latestVersionCode = parsedCode,
+                                    latestVersionName = cleanName.ifBlank { "v$parsedCode" },
+                                    message = updateMessageInput.trim(),
+                                    downloadUrl = cleanUrl
+                                )
+                                val res = activeFlagsRepo.saveAppUpdateConfig(draft)
+                                isSavingUpdateConfig = false
+                                if (res.isSuccess) {
+                                    isUpdateDraftDirty = false
+                                    snackbarHostState.showSnackbar(
+                                        if (draft.enabled) "📲 Aviso v${draft.latestVersionName} publicado para los conductores."
+                                        else "🔕 Aviso de actualización guardado como inactivo."
+                                    )
+                                } else {
+                                    snackbarHostState.showSnackbar(
+                                        res.exceptionOrNull()?.message ?: "⚠️ No se pudo guardar el aviso de actualización."
+                                    )
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SafetyGreen500,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("publish_app_update_btn")
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isSavingUpdateConfig) "Guardando..." else "Publicar Aviso de Actualización",
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            enabled = !isSavingUpdateConfig && appUpdateConfig.enabled,
+                            onClick = {
+                                coroutineScope.launch {
+                                    isSavingUpdateConfig = true
+                                    val disabledConfig = appUpdateConfig.copy(enabled = false)
+                                    val res = activeFlagsRepo.saveAppUpdateConfig(disabledConfig)
+                                    isSavingUpdateConfig = false
+                                    if (res.isSuccess) {
+                                        updateEnabled = false
+                                        isUpdateDraftDirty = false
+                                        snackbarHostState.showSnackbar("🔕 Aviso de actualización desactivado.")
+                                    } else {
+                                        snackbarHostState.showSnackbar("⚠️ No se pudo desactivar el aviso.")
+                                    }
+                                }
+                            },
+                            border = BorderStroke(1.dp, AlertRed500.copy(alpha = 0.7f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AlertRed500),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("disable_app_update_btn")
+                        ) {
+                            Text("Desactivar Aviso", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            enabled = FeatureFlagsRepository.isValidUpdateDownloadUrl(updateDownloadUrlInput),
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateDownloadUrlInput.trim())).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Throwable) {
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("⚠️ No se encontró navegador para abrir el link.")
+                                    }
+                                }
+                            },
+                            border = BorderStroke(1.dp, RouteBlue500.copy(alpha = 0.7f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = RouteBlue500),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("test_app_update_link_btn")
+                        ) {
+                            Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Probar Link", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                    }
                 }
             }
 

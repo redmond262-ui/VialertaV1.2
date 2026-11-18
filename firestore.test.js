@@ -516,6 +516,88 @@ test("Feature flags config: guest & users can get features doc, cannot list or w
   await assertFails(bobDb.collection("app_config").get());
 });
 
+test("App update config: guest & users can get app_update, only admin can write valid version payload", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com" }).firestore();
+  const adminDb = testEnv.authenticatedContext("owner_uid", { email: "redmond262@gmail.com" }).firestore();
+
+  // Non-admin cannot create or modify app_config/app_update
+  await assertFails(
+    bobDb.collection("app_config").doc("app_update").set({
+      enabled: true,
+      mandatory: false,
+      latestVersionCode: 4,
+      latestVersionName: "2.3",
+      message: "Hijacked update",
+      downloadUrl: "https://evil.example.com/app.apk",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Admin rejects invalid versionCode (< 1), unexpected keys, or tampered future timestamp
+  await assertFails(
+    adminDb.collection("app_config").doc("app_update").set({
+      enabled: true,
+      mandatory: false,
+      latestVersionCode: 0,
+      latestVersionName: "2.3",
+      downloadUrl: "https://drive.google.com/file/d/abc/view",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertFails(
+    adminDb.collection("app_config").doc("app_update").set({
+      enabled: true,
+      mandatory: false,
+      latestVersionCode: 4,
+      latestVersionName: "2.3",
+      downloadUrl: "https://drive.google.com/file/d/abc/view",
+      unexpectedField: true,
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertFails(
+    adminDb.collection("app_config").doc("app_update").set({
+      enabled: true,
+      mandatory: false,
+      latestVersionCode: 4,
+      latestVersionName: "2.3",
+      downloadUrl: "https://drive.google.com/file/d/abc/view",
+      updatedAt: new Date(Date.now() + 60000),
+    })
+  );
+
+  // Admin writes valid Kotlin-mirrored app_update payload
+  await assertSucceeds(
+    adminDb.collection("app_config").doc("app_update").set({
+      enabled: true,
+      mandatory: false,
+      latestVersionCode: 4,
+      latestVersionName: "2.3",
+      message: "Mejoras en rutas y comandos por voz.",
+      downloadUrl: "https://drive.google.com/file/d/12345/view",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Guest Mode and signed-in drivers can read app_config/app_update
+  await assertSucceeds(unauthDb.collection("app_config").doc("app_update").get());
+  await assertSucceeds(bobDb.collection("app_config").doc("app_update").get());
+
+  // Admin can disable update notice cleanly
+  await assertSucceeds(
+    adminDb.collection("app_config").doc("app_update").set({
+      enabled: false,
+      mandatory: false,
+      latestVersionCode: 4,
+      latestVersionName: "2.3",
+      message: "",
+      downloadUrl: "",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+});
+
 test("User isBetaTester flag: blocks self-escalation on create/update, allows admin toggle and normal profile edits", async () => {
   const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com" }).firestore();
   const adminDb = testEnv.authenticatedContext("owner_uid", { email: "redmond262@gmail.com" }).firestore();

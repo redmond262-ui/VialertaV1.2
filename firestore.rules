@@ -94,6 +94,15 @@ service cloud.firestore {
              (!('preTripChecklistMode' in data) || isValidFeatureMode(data.preTripChecklistMode));
     }
 
+    function isValidAppUpdateConfig(data) {
+      return data.enabled is bool &&
+             (!('mandatory' in data) || data.mandatory is bool) &&
+             data.latestVersionCode is int && data.latestVersionCode >= 1 && data.latestVersionCode <= 1000000 &&
+             data.latestVersionName is string && data.latestVersionName.size() <= 32 &&
+             (!('message' in data) || data.message == null || (data.message is string && data.message.size() <= 500)) &&
+             (!('downloadUrl' in data) || data.downloadUrl == null || (data.downloadUrl is string && data.downloadUrl.size() <= 500));
+    }
+
     function isValidRoadAlert(data) {
       return data.type is string && data.type.size() > 0 && data.type.size() <= 100 &&
              data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0 &&
@@ -276,10 +285,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // --- App Global Configs (billing & feature rollout flags) ---
+    // --- App Global Configs (billing, feature rollout flags, app update notice) ---
     match /app_config/{configId} {
-      // 'features' holds zero PII (hidden|beta|public module modes) so Guest Mode can also hide gated tabs
-      allow get: if configId == 'features' || (isSignedIn() && configId == 'billing');
+      // 'features' & 'app_update' hold zero PII so Guest Mode & signed-in drivers can read them
+      allow get: if configId in ['features', 'app_update'] || (isSignedIn() && configId == 'billing');
       allow list: if isAdmin();
       allow create: if isAdmin() &&
                        (
@@ -289,7 +298,11 @@ service cloud.firestore {
                          (configId == 'features' &&
                           incoming().keys().hasAll(['aventonMode', 'baulVialMode']) &&
                           incoming().keys().hasOnly(['aventonMode', 'baulVialMode', 'reclamosMode', 'proConversionMode', 'referralsMode', 'preTripChecklistMode', 'updatedAt']) &&
-                          isValidFeatureFlags(incoming()))
+                          isValidFeatureFlags(incoming())) ||
+                         (configId == 'app_update' &&
+                          incoming().keys().hasAll(['enabled', 'latestVersionCode', 'latestVersionName']) &&
+                          incoming().keys().hasOnly(['enabled', 'mandatory', 'latestVersionCode', 'latestVersionName', 'message', 'downloadUrl', 'updatedAt']) &&
+                          isValidAppUpdateConfig(incoming()))
                        ) &&
                        (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time));
       allow update: if isAdmin() &&
@@ -297,7 +310,10 @@ service cloud.firestore {
                          (configId == 'billing' && isValidBillingConfig(incoming())) ||
                          (configId == 'features' &&
                           incoming().keys().hasOnly(['aventonMode', 'baulVialMode', 'reclamosMode', 'proConversionMode', 'referralsMode', 'preTripChecklistMode', 'updatedAt']) &&
-                          isValidFeatureFlags(incoming()))
+                          isValidFeatureFlags(incoming())) ||
+                         (configId == 'app_update' &&
+                          incoming().keys().hasOnly(['enabled', 'mandatory', 'latestVersionCode', 'latestVersionName', 'message', 'downloadUrl', 'updatedAt']) &&
+                          isValidAppUpdateConfig(incoming()))
                        ) &&
                        (!('updatedAt' in incoming()) || (incoming().updatedAt is timestamp && incoming().updatedAt <= request.time));
       allow delete: if isAdmin();

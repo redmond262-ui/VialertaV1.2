@@ -87,6 +87,21 @@
       },
       "required": ["aventonMode", "baulVialMode"]
     },
+    "AppUpdateConfig": {
+      "title": "App Update Notice Config",
+      "description": "Admin-published new APK version prompt with download link and release notes",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mandatory": { "type": "boolean" },
+        "latestVersionCode": { "type": "integer" },
+        "latestVersionName": { "type": "string" },
+        "message": { "type": "string" },
+        "downloadUrl": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["enabled", "latestVersionCode", "latestVersionName"]
+    },
     "RoadAlert": {
       "title": "Road Hazard Alert",
       "description": "Collaborative road hazard and pothole alert reported by drivers",
