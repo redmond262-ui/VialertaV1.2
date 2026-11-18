@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VíaAlerta • Panel Maestro Web</title>
+  <title>VíaAlerta • Panel Web Maestro Consolidado</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
@@ -17,6 +17,7 @@
       --green: #22c55e;
       --red: #ef4444;
       --blue: #38bdf8;
+      --purple: #c084fc;
       --text: #f8fafc;
       --muted: #94a3b8;
     }
@@ -39,7 +40,7 @@
     }
     .login-card {
       width: 100%;
-      max-width: 460px;
+      max-width: 470px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 24px;
@@ -64,14 +65,15 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 6px;
       border: none;
-      border-radius: 12px;
-      padding: 12px 18px;
+      border-radius: 11px;
+      padding: 11px 16px;
       font-weight: 700;
-      font-size: 14px;
+      font-size: 13px;
       cursor: pointer;
-      transition: transform .15s ease, opacity .15s ease;
+      transition: transform .12s ease, opacity .12s ease;
+      text-decoration: none;
     }
     .btn:hover { opacity: 0.92; transform: translateY(-1px); }
     .btn:active { transform: scale(0.98); }
@@ -88,7 +90,7 @@
     .btn-red { background: rgba(239,68,68,0.18); color: var(--red); border: 1px solid rgba(239,68,68,0.45); }
     .btn-blue { background: rgba(56,189,248,0.16); color: var(--blue); border: 1px solid rgba(56,189,248,0.45); }
     .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
-    .btn-sm { padding: 7px 11px; font-size: 12px; border-radius: 9px; }
+    .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
 
     .topbar {
       position: sticky;
@@ -111,21 +113,24 @@
       color: #020617; font-weight: 900; font-size: 18px;
       display: grid; place-items: center;
     }
-    .container { max-width: 1380px; margin: 0 auto; padding: 22px; }
+    .container { max-width: 1420px; margin: 0 auto; padding: 20px 22px 48px; }
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 14px;
-      margin-bottom: 22px;
+      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
     }
     .kpi-card {
       background: var(--surface);
       border: 1px solid var(--surface-2);
       border-radius: 16px;
-      padding: 16px 18px;
+      padding: 15px 17px;
+      cursor: pointer;
+      transition: border-color .15s ease, transform .15s ease;
     }
-    .kpi-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; }
-    .kpi-value { font-size: 32px; font-weight: 900; margin: 6px 0 2px; }
+    .kpi-card:hover { border-color: var(--amber); transform: translateY(-1px); }
+    .kpi-label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+    .kpi-value { font-size: 30px; font-weight: 900; margin: 5px 0 2px; }
     .kpi-sub { font-size: 12px; color: var(--muted); }
 
     .tabs {
@@ -138,12 +143,14 @@
       background: var(--surface);
       color: var(--muted);
       border: 1px solid var(--surface-2);
-      padding: 10px 16px;
+      padding: 10px 15px;
       border-radius: 12px;
       font-weight: 700;
       font-size: 13px;
       cursor: pointer;
+      transition: border-color .15s ease, color .15s ease;
     }
+    .tab-btn:hover { color: var(--text); border-color: var(--border); }
     .tab-btn.active {
       background: rgba(245,158,11,0.18);
       color: var(--amber-light);
@@ -165,6 +172,12 @@
       margin-bottom: 16px;
     }
     .panel-title { margin: 0; font-size: 17px; font-weight: 800; }
+    .subcard {
+      background: var(--bg);
+      border: 1px solid var(--surface-2);
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
     input, select, textarea {
       background: var(--bg);
       color: var(--text);
@@ -179,11 +192,43 @@
 
     #live-map {
       width: 100%;
-      height: 490px;
+      height: 500px;
       border-radius: 14px;
       border: 1px solid var(--surface-2);
       background: #0b1120;
     }
+    .leaflet-tile-pane.osm-dark {
+      filter: invert(92%) hue-rotate(180deg) brightness(96%) contrast(90%) saturate(85%);
+    }
+    .layer-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--surface-2);
+      border-radius: 12px;
+      font-size: 12px;
+    }
+    .layer-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text);
+      user-select: none;
+    }
+    .layer-chip input { accent-color: var(--amber); width: 15px; height: 15px; }
+    .map-grid-below {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
     .table-wrap { overflow-x: auto; }
     table {
       width: 100%;
@@ -213,6 +258,7 @@
     .tag-amber { background: rgba(245,158,11,0.16); color: var(--amber-light); }
     .tag-red { background: rgba(239,68,68,0.16); color: var(--red); }
     .tag-blue { background: rgba(56,189,248,0.16); color: var(--blue); }
+    .tag-purple { background: rgba(192,132,252,0.16); color: var(--purple); }
     .tag-slate { background: var(--surface-2); color: var(--muted); }
     .alert-box {
       margin-top: 16px;
@@ -223,6 +269,7 @@
       padding: 12px 14px;
       font-size: 13px;
       text-align: left;
+      line-height: 1.5;
     }
     .toast {
       position: fixed;
@@ -237,6 +284,13 @@
       box-shadow: 0 12px 32px rgba(0,0,0,0.6);
       font-size: 13px;
       font-weight: 600;
+      max-width: 420px;
+    }
+    .actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
     }
   </style>
 </head>
@@ -246,9 +300,9 @@
   <div id="auth-view" class="login-wrap">
     <div class="login-card">
       <div class="pill">🛡️ CENTRO DE CONTROL MAESTRO</div>
-      <h1 style="margin: 16px 0 6px; font-size: 26px;">VíaAlerta Web Admin</h1>
+      <h1 style="margin: 16px 0 6px; font-size: 26px;">VíaAlerta Panel Maestro</h1>
       <p style="color: var(--muted); font-size: 14px; margin: 0 0 10px; line-height: 1.5;">
-        Iniciá sesión con tu misma cuenta administradora de la app (<strong>redmond262@gmail.com</strong>) para controlar alertas, conductores en vivo, Baúl Vial, SOS y licencias PRO en tiempo real.
+        Panel único consolidado. Iniciá sesión con tu cuenta administradora (<strong>redmond262@gmail.com</strong>) para controlar mapa nacional, alertas, Seguime, licencias PRO, módulos y publicaciones de APK en tiempo real.
       </p>
 
       <button id="btn-google-login" class="btn btn-google">
@@ -259,10 +313,10 @@
       <div id="auth-error" class="alert-box hidden"></div>
 
       <div style="margin-top:18px;font-size:12px;color:var(--muted);">
-        Conectado al proyecto Firebase <code>gen-lang-client-0699193083</code>
+        Proyecto Firebase <code>gen-lang-client-0699193083</code>
       </div>
       <div style="margin-top:10px;">
-        <a href="/index.html" style="color:var(--amber-light);font-size:12px;text-decoration:none;">← Volver a descarga de APK</a>
+        <a href="/index.html" style="color:var(--amber-light);font-size:12px;text-decoration:none;">← Ir a página pública de descarga APK</a>
       </div>
     </div>
   </div>
@@ -279,50 +333,50 @@
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span class="pill" style="background:rgba(34,197,94,0.14);color:var(--green);border-color:rgba(34,197,94,0.4);">● SINCRONIZADO EN VIVO</span>
-        <a href="/index.html" class="btn btn-ghost btn-sm" style="text-decoration:none;">📱 Descargar APK</a>
+        <span id="top-update-pill" class="pill hidden">📲 Update activo</span>
+        <a href="/index.html" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">🌐 Web Pública</a>
         <button id="btn-logout" class="btn btn-red btn-sm">Cerrar Sesión</button>
       </div>
     </header>
 
-    <main class="container">
-      <!-- KPI GRID -->
+    <main class="container" id="dashboard-main">
+      <!-- KPI GRID (click to jump to section) -->
       <section class="kpi-grid">
-        <div class="kpi-card">
+        <div class="kpi-card" data-jump-tab="drivers">
           <div class="kpi-label">Conductores Online</div>
           <div class="kpi-value" id="kpi-drivers" style="color:var(--green)">0</div>
-          <div class="kpi-sub" id="kpi-driving">0 circulando ahora</div>
+          <div class="kpi-sub" id="kpi-driving">0 circulando · 0 Seguime</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-jump-tab="alerts">
           <div class="kpi-label">Alertas Activas</div>
           <div class="kpi-value" id="kpi-alerts" style="color:var(--red)">0</div>
           <div class="kpi-sub" id="kpi-potholes">0 pozos críticos (&ge;15cm)</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-jump-tab="sos">
           <div class="kpi-label">Emergencias SOS</div>
           <div class="kpi-value" id="kpi-sos" style="color:var(--amber-light)">0</div>
           <div class="kpi-sub" id="kpi-hitchhikes">0 aventones esperando</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-jump-tab="baul">
           <div class="kpi-label">Baúl Vial</div>
           <div class="kpi-value" id="kpi-baul" style="color:var(--blue)">0</div>
           <div class="kpi-sub" id="kpi-baul-claims">0 reclamos pendientes</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Usuarios Registrados</div>
-          <div class="kpi-value" id="kpi-users" style="color:#c084fc">0</div>
-          <div class="kpi-sub" id="kpi-pro-users">0 con plan PRO activo</div>
+        <div class="kpi-card" data-jump-tab="users">
+          <div class="kpi-label">Usuarios / PRO</div>
+          <div class="kpi-value" id="kpi-users" style="color:var(--purple)">0</div>
+          <div class="kpi-sub" id="kpi-pro-users">0 PRO · 0 Beta</div>
         </div>
       </section>
 
-      <!-- TABS -->
+      <!-- CONSOLIDATED 8-TAB NAVIGATION -->
       <nav class="tabs">
-        <button class="tab-btn active" data-tab="map">🗺️ Mapa Nacional en Vivo</button>
+        <button class="tab-btn active" data-tab="map">🗺️ Mapa Nacional</button>
         <button class="tab-btn" data-tab="alerts">⚠️ Alertas y Baches</button>
-        <button class="tab-btn" data-tab="drivers">🚗 Conductores Online</button>
-        <button class="tab-btn" data-tab="licenses">🪪 Licencias PRO</button>
-        <button class="tab-btn" data-tab="users">👥 Usuarios y Beta</button>
-        <button class="tab-btn" data-tab="features">🚀 Módulos y Beta</button>
+        <button class="tab-btn" data-tab="drivers">🚗 Conductores y Seguime</button>
+        <button class="tab-btn" data-tab="users">👥 Usuarios, PRO y Beta</button>
         <button class="tab-btn" data-tab="updates">📲 Actualizaciones APK</button>
+        <button class="tab-btn" data-tab="features">🚀 Módulos y Cobro PRO</button>
         <button class="tab-btn" data-tab="baul">🧳 Baúl Vial</button>
         <button class="tab-btn" data-tab="sos">🚨 SOS y Aventones</button>
       </nav>
@@ -331,27 +385,71 @@
       <section id="tab-map" class="panel">
         <div class="panel-header">
           <div>
-            <h2 class="panel-title">Mapa Nacional en Tiempo Real</h2>
-            <div style="font-size:12px;color:var(--muted);">🟢 Conductores · 🔴 Alertas/Pozos · 🟠 SOS · 🔵 Baúl Vial</div>
+            <h2 class="panel-title">Mapa Nacional en Tiempo Real (Sin API Key)</h2>
+            <div style="font-size:12px;color:var(--muted);">🟢 Conductores · 💜 Seguime · 🔴 Alertas/Pozos · 🟠 SOS · 🔵 Baúl Vial</div>
           </div>
-          <button id="btn-fit-map" class="btn btn-ghost btn-sm">Encuadrar Argentina</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <select id="select-map-style" title="Proveedor de mapa gratuito">
+              <option value="0">🗺️ OpenStreetMap Oscuro (Gratis)</option>
+              <option value="1">🛰️ ArcGIS Calles Oscuro (Respaldo)</option>
+              <option value="2">🌑 CARTO Dark (Alternativo)</option>
+            </select>
+            <button id="btn-fit-active" class="btn btn-amber btn-sm">🎯 Ver Activos</button>
+            <button id="btn-fit-map" class="btn btn-ghost btn-sm">🇦🇷 Encuadrar Argentina</button>
+          </div>
         </div>
+
+        <div class="layer-bar">
+          <strong style="color:var(--muted);margin-right:4px;">Capas visibles:</strong>
+          <label class="layer-chip"><input type="checkbox" id="layer-drivers" checked /> 🟢 Conductores (<span id="cnt-layer-drivers">0</span>)</label>
+          <label class="layer-chip"><input type="checkbox" id="layer-seguime" checked /> 💜 Seguime (<span id="cnt-layer-seguime">0</span>)</label>
+          <label class="layer-chip"><input type="checkbox" id="layer-alerts" checked /> 🔴 Alertas (<span id="cnt-layer-alerts">0</span>)</label>
+          <label class="layer-chip"><input type="checkbox" id="layer-sos" checked /> 🟠 SOS (<span id="cnt-layer-sos">0</span>)</label>
+          <label class="layer-chip"><input type="checkbox" id="layer-baul" checked /> 🔵 Baúl (<span id="cnt-layer-baul">0</span>)</label>
+        </div>
+
         <div id="live-map"></div>
+        <div id="map-error-banner" class="alert-box hidden"></div>
+
+        <div class="map-grid-below">
+          <div class="subcard">
+            <h3 style="margin:0 0 10px;font-size:14px;color:var(--amber-light);">🔥 Ranking de Rutas Más Peligrosas</h3>
+            <div id="dangerous-routes-list" style="font-size:13px;color:var(--muted);">Cargando ranking...</div>
+          </div>
+          <div class="subcard">
+            <h3 style="margin:0 0 10px;font-size:14px;color:var(--blue);">📡 Estado General de Red</h3>
+            <div id="network-summary-list" style="font-size:13px;color:var(--muted);line-height:1.7;"></div>
+          </div>
+        </div>
       </section>
 
       <!-- TAB: ALERTS -->
       <section id="tab-alerts" class="panel hidden">
         <div class="panel-header">
-          <h2 class="panel-title">Moderación de Alertas y Baches</h2>
+          <div>
+            <h2 class="panel-title">Moderación de Alertas y Baches</h2>
+            <div style="font-size:12px;color:var(--muted);">Revisá reportes de rutas, volá al punto en el mapa, resolvelos o depurá pruebas.</div>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <input type="text" id="filter-alerts" placeholder="Buscar por ruta o descripción..." />
+            <input type="text" id="filter-alerts" placeholder="Buscar ruta, ciudad o autor..." />
+            <select id="filter-alert-type">
+              <option value="all">Todos los tipos</option>
+              <option value="pozo">Pozos</option>
+              <option value="ruta_detonada">Ruta detonada</option>
+              <option value="radar">Radar vial</option>
+              <option value="corte_obra">Corte / Obra</option>
+              <option value="neblina">Neblina / Clima</option>
+              <option value="animales">Animales</option>
+              <option value="vehiculo_averiado">Vehículo en banquina</option>
+            </select>
             <select id="filter-alert-status">
               <option value="all">Todas</option>
               <option value="active" selected>Activas</option>
               <option value="resolved">Resueltas</option>
             </select>
-            <button id="btn-clean-tests" class="btn btn-blue btn-sm">🧹 Limpiar Tests/Pruebas</button>
+            <button id="btn-clean-tests" class="btn btn-blue btn-sm">🧹 Limpiar Tests</button>
             <button id="btn-purge-resolved" class="btn btn-ghost btn-sm">🗑️ Purgar Resueltas</button>
+            <button id="btn-reset-all-alerts" class="btn btn-red btn-sm">☢️ Reset Total</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -360,8 +458,8 @@
               <tr>
                 <th>Tipo</th>
                 <th>Ruta / Ubicación</th>
-                <th>Detalle</th>
-                <th>Confirmaciones</th>
+                <th>Detalle y Autor</th>
+                <th>Votos</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -371,16 +469,18 @@
         </div>
       </section>
 
-      <!-- TAB: DRIVERS -->
+      <!-- TAB: DRIVERS & SEGUIME -->
       <section id="tab-drivers" class="panel hidden">
         <div class="panel-header">
           <div>
-            <h2 class="panel-title">Conductores Transmitiendo Telemetría en Vivo</h2>
-            <span style="font-size:12px;color:var(--muted);">Latidos GPS cada 25s (activos &lt; 2m 30s)</span>
+            <h2 class="panel-title">Conductores Online y Enlaces Seguime en Vivo</h2>
+            <span style="font-size:12px;color:var(--muted);">Latidos GPS cada 25s (online &lt; 2m 30s) + sesiones privadas de Seguime activas.</span>
           </div>
           <button id="btn-clean-stale-drivers" class="btn btn-ghost btn-sm">🧹 Limpiar inactivos (&gt;2.5m)</button>
         </div>
-        <div class="table-wrap">
+
+        <h3 style="font-size:14px;color:var(--green);margin:4px 0 10px;">🚗 Conductores Transmitiendo Telemetría</h3>
+        <div class="table-wrap" style="margin-bottom:24px;">
           <table>
             <thead>
               <tr>
@@ -395,47 +495,75 @@
             <tbody id="tbody-drivers"></tbody>
           </table>
         </div>
+
+        <div style="border-top:1px solid var(--surface-2);padding-top:18px;">
+          <div class="panel-header" style="margin-bottom:10px;">
+            <h3 style="font-size:14px;color:var(--purple);margin:0;">💜 Sesiones «Seguime (Tiempo Real)»</h3>
+            <span style="font-size:12px;color:var(--muted);">Viajes compartidos por WhatsApp activos o recientes</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Conductor / Vehículo</th>
+                  <th>Origen → Destino</th>
+                  <th>Velocidad / Coords</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-seguime"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
-      <!-- TAB: LICENSES -->
-      <section id="tab-licenses" class="panel hidden">
+      <!-- TAB: UNIFIED USERS, PRO LICENSES & BETA -->
+      <section id="tab-users" class="panel hidden">
         <div class="panel-header">
           <div>
-            <h2 class="panel-title">🪪 Manejo Centralizado de Licencias PRO</h2>
-            <div style="font-size:12px;color:var(--muted);">Otorgá pruebas (7d), abonos mensuales (30d), trimestrales (90d), anuales (365d) o licencias vitalicias ilimitadas en tiempo real.</div>
+            <h2 class="panel-title">👥 Usuarios, Licencias PRO, Beta Testers y DNI</h2>
+            <div style="font-size:12px;color:var(--muted);">Unificado: activá pruebas (7d), abonos (30d/90d/1 año), licencias vitalicias (∞), Beta o verificación de DNI en 1 clic.</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <input type="text" id="filter-licenses-q" placeholder="Buscar por nombre, email o patente..." />
-            <select id="filter-licenses-status">
+            <input type="text" id="filter-users" placeholder="Buscar nombre, email, patente, DNI o código VIA-..." style="min-width:260px;" />
+            <select id="filter-users-status">
               <option value="all">Todas las cuentas</option>
               <option value="active">PRO Activas</option>
               <option value="expiring">Por vencer (&le; 7 días)</option>
-              <option value="unlimited">Ilimitadas (&infin;)</option>
+              <option value="unlimited">PRO Ilimitadas (&infin;)</option>
+              <option value="beta">Beta Testers</option>
+              <option value="verified">DNI Verificado</option>
               <option value="free">Freemium / Expiradas</option>
             </select>
           </div>
         </div>
 
         <div class="kpi-grid" style="margin-bottom:16px;">
-          <div class="kpi-card">
-            <div class="kpi-label">Licencias Activas</div>
-            <div class="kpi-value" id="lic-kpi-active" style="color:var(--amber-light);font-size:26px;">0</div>
-            <div class="kpi-sub">Con funciones PRO activas</div>
+          <div class="kpi-card" style="cursor:default;">
+            <div class="kpi-label">PRO Activas</div>
+            <div class="kpi-value" id="lic-kpi-active" style="color:var(--amber-light);font-size:25px;">0</div>
+            <div class="kpi-sub">Con licencia vigente</div>
           </div>
-          <div class="kpi-card">
+          <div class="kpi-card" style="cursor:default;">
             <div class="kpi-label">Ilimitadas (&infin;)</div>
-            <div class="kpi-value" id="lic-kpi-unlimited" style="color:var(--green);font-size:26px;">0</div>
-            <div class="kpi-sub">Vitalicia / Staff / Socios</div>
+            <div class="kpi-value" id="lic-kpi-unlimited" style="color:var(--green);font-size:25px;">0</div>
+            <div class="kpi-sub">Vitalicia / Staff / Leyenda</div>
           </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Pruebas / Por Vencer</div>
-            <div class="kpi-value" id="lic-kpi-expiring" style="color:var(--blue);font-size:26px;">0</div>
-            <div class="kpi-sub">Vencen en &le; 7 días</div>
+          <div class="kpi-card" style="cursor:default;">
+            <div class="kpi-label">Por Vencer (&le;7d)</div>
+            <div class="kpi-value" id="lic-kpi-expiring" style="color:var(--blue);font-size:25px;">0</div>
+            <div class="kpi-sub">Pruebas / renovaciones</div>
           </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Plan Freemium</div>
-            <div class="kpi-value" id="lic-kpi-free" style="color:var(--muted);font-size:26px;">0</div>
-            <div class="kpi-sub">Sin licencia PRO vigente</div>
+          <div class="kpi-card" style="cursor:default;">
+            <div class="kpi-label">Beta Testers</div>
+            <div class="kpi-value" id="lic-kpi-beta" style="color:var(--purple);font-size:25px;">0</div>
+            <div class="kpi-sub">Acceso anticipado</div>
+          </div>
+          <div class="kpi-card" style="cursor:default;">
+            <div class="kpi-label">Freemium</div>
+            <div class="kpi-value" id="lic-kpi-free" style="color:var(--muted);font-size:25px;">0</div>
+            <div class="kpi-sub">Sin PRO activo</div>
           </div>
         </div>
 
@@ -443,83 +571,15 @@
           <table>
             <thead>
               <tr>
-                <th>Conductor / Email</th>
-                <th>Estado de Licencia</th>
-                <th>Vencimiento</th>
-                <th>Nivel / XP</th>
-                <th>Otorgar / Modificar Licencia</th>
-              </tr>
-            </thead>
-            <tbody id="tbody-licenses"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- TAB: USERS -->
-      <section id="tab-users" class="panel hidden">
-        <div class="panel-header">
-          <h2 class="panel-title">Gestión de Usuarios, Beta Testers y Licencias PRO</h2>
-          <input type="text" id="filter-users" placeholder="Buscar por nombre, email o patente..." />
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Conductor / Email</th>
+                <th>Conductor / Email / Código</th>
                 <th>DNI / Vehículo</th>
-                <th>Plan y Acceso</th>
-                <th>XP / Puntos Ruta</th>
-                <th>Control PRO / Beta / DNI</th>
+                <th>Licencia y Vencimiento</th>
+                <th>XP / Puntos / Referidos</th>
+                <th>Acciones Rápidas (PRO / Beta / DNI)</th>
               </tr>
             </thead>
             <tbody id="tbody-users"></tbody>
           </table>
-        </div>
-      </section>
-
-      <!-- TAB: FEATURE FLAGS & BILLING -->
-      <section id="tab-features" class="panel hidden">
-        <div class="panel-header">
-          <div>
-            <h2 class="panel-title">Control Remoto de Módulos (Oculto / Beta / Público)</h2>
-            <div style="font-size:12px;color:var(--muted);">Los cambios aplican en tiempo real a todos los celulares sin necesidad de actualizar el APK.</div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <button id="btn-demo-beta-all" class="btn btn-amber btn-sm">🎭 Modo Demo Dueño (Ocultos → Beta)</button>
-            <button id="btn-public-all" class="btn btn-green btn-sm">🌍 Hacer Todo Público</button>
-          </div>
-        </div>
-        <div class="table-wrap" style="margin-bottom:24px;">
-          <table>
-            <thead>
-              <tr>
-                <th>Módulo</th>
-                <th>Descripción</th>
-                <th>Estado Actual</th>
-                <th>Cambiar Modo</th>
-              </tr>
-            </thead>
-            <tbody id="tbody-features"></tbody>
-          </table>
-        </div>
-
-        <div style="border-top:1px solid var(--surface-2);padding-top:18px;">
-          <h3 style="margin:0 0 10px;font-size:15px;color:var(--green);">💳 Configuración Global de Cobro PRO (Mercado Pago)</h3>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px;">
-            <div>
-              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Alias / CVU Mercado Pago</div>
-              <input type="text" id="input-mp-alias" placeholder="vialerta.oficial.mp" style="width:100%;" />
-            </div>
-            <div>
-              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Precio Mensual PRO (ARS)</div>
-              <input type="number" id="input-pro-price" placeholder="5000" style="width:100%;" />
-            </div>
-            <div>
-              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Link de Pago Opcional (MP)</div>
-              <input type="text" id="input-mp-link" placeholder="https://mpago.la/..." style="width:100%;" />
-            </div>
-          </div>
-          <button id="btn-save-billing" class="btn btn-green">💾 Guardar Configuración de Cobro</button>
         </div>
       </section>
 
@@ -529,10 +589,18 @@
           <div>
             <h2 class="panel-title">📲 Publicar Nueva Versión (App Android + Página Web)</h2>
             <div style="font-size:12px;color:var(--muted);">
-              Pegá el link de tu APK en Google Drive o GitHub Releases. Sincroniza el cartel de aviso dentro de la app y el botón de descarga en <code>index.html</code>.
+              Pegá el link de tu APK en Google Drive o GitHub Releases. Sincroniza en vivo el diálogo de actualización en los celulares y el botón oficial en <code>index.html</code>.
             </div>
           </div>
-          <span id="update-status-badge" class="tag tag-slate">INACTIVO</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span id="update-updated-at" style="font-size:12px;color:var(--muted);"></span>
+            <span id="update-status-badge" class="tag tag-slate">INACTIVO</span>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <button id="btn-prefill-next-update" class="btn btn-amber btn-sm">✨ Preparar siguiente versión (+1)</button>
+          <span style="font-size:12px;color:var(--muted);">Incrementa el <code>versionCode</code> automáticamente para que no coincida con la versión ya instalada.</span>
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:12px;">
@@ -571,28 +639,77 @@
           <button id="btn-save-app-update" class="btn btn-green">🚀 Publicar Aviso de Actualización</button>
           <button id="btn-disable-app-update" class="btn btn-red">🔕 Desactivar Aviso</button>
           <button id="btn-test-app-update-url" class="btn btn-blue">🔗 Probar Link</button>
-          <a href="/index.html" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="text-decoration:none;">🌐 Ver Web de Descarga</a>
+          <a href="/index.html" target="_blank" rel="noopener noreferrer" class="btn btn-ghost">🌐 Ver Web de Descarga</a>
+        </div>
+      </section>
+
+      <!-- TAB: FEATURE FLAGS & BILLING -->
+      <section id="tab-features" class="panel hidden">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Control Remoto de Módulos (Oculto / Beta / Público)</h2>
+            <div style="font-size:12px;color:var(--muted);">Los cambios aplican en tiempo real a todos los celulares sin necesidad de actualizar el APK.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button id="btn-demo-beta-all" class="btn btn-amber btn-sm">🎭 Modo Demo Dueño (Ocultos → Beta)</button>
+            <button id="btn-public-all" class="btn btn-green btn-sm">🌍 Hacer Todo Público</button>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-bottom:24px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Módulo</th>
+                <th>Descripción</th>
+                <th>Estado Actual</th>
+                <th>Cambiar Modo</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-features"></tbody>
+          </table>
+        </div>
+
+        <div style="border-top:1px solid var(--surface-2);padding-top:18px;">
+          <h3 style="margin:0 0 10px;font-size:15px;color:var(--green);">💳 Configuración Global de Cobro PRO (Mercado Pago)</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px;">
+            <div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Alias / CVU Mercado Pago (mín. 3 caracteres)</div>
+              <input type="text" id="input-mp-alias" placeholder="vialerta.oficial.mp" style="width:100%;" />
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Precio Mensual PRO (ARS)</div>
+              <input type="number" id="input-pro-price" placeholder="5000" style="width:100%;" />
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Link de Pago Opcional (MP)</div>
+              <input type="text" id="input-mp-link" placeholder="https://mpago.la/..." style="width:100%;" />
+            </div>
+          </div>
+          <button id="btn-save-billing" class="btn btn-green">💾 Guardar Configuración de Cobro</button>
         </div>
       </section>
 
       <!-- TAB: BAUL VIAL -->
       <section id="tab-baul" class="panel hidden">
         <div class="panel-header">
-          <h2 class="panel-title">Baúl Vial • Objetos Encontrados y Extravíos</h2>
+          <div>
+            <h2 class="panel-title">Baúl Vial • Objetos Encontrados y Extravíos</h2>
+            <div style="font-size:12px;color:var(--muted);">Revisá respuestas secretas de reclamo, aprobá/rechazá entregas y ubicá cada aviso en el mapa.</div>
+          </div>
           <select id="filter-baul-type">
             <option value="all">Todos</option>
             <option value="encontrado">Encontrados</option>
             <option value="perdido">Extravíos</option>
+            <option value="pending_claim">Con reclamo pendiente</option>
           </select>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Tipo</th>
+                <th>Tipo / Categoría</th>
                 <th>Título / Ruta</th>
-                <th>Pregunta de Seguridad</th>
-                <th>Reclamo</th>
+                <th>Pregunta y Reclamo</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -612,7 +729,7 @@
           <table>
             <thead>
               <tr>
-                <th>Conductor / DNI</th>
+                <th>Conductor / DNI / Tel</th>
                 <th>Vehículo / Patente</th>
                 <th>Asistencia</th>
                 <th>Ubicación</th>
@@ -690,9 +807,12 @@
       preTripChecklistMode: "public"
     };
 
+    const TABS = ["map", "alerts", "drivers", "users", "updates", "features", "baul", "sos"];
+
     const state = {
       alerts: [],
       drivers: [],
+      seguime: [],
       users: [],
       baul: [],
       sos: [],
@@ -702,6 +822,7 @@
       appUpdate: { enabled: false, mandatory: false, latestVersionCode: 4, latestVersionName: "", message: "", downloadUrl: "" },
       updateDraftDirty: false,
       unsubs: [],
+      tickerId: null,
       map: null,
       markerLayer: null
     };
@@ -709,9 +830,10 @@
     const $ = (id) => document.getElementById(id);
 
     if (window.location.protocol === "file:") {
-      const box = $("auth-error");
-      box.innerHTML = "<strong>Abriste el archivo directo (file://):</strong> El login de Google requiere servidor web local o HTTPS.<br><br>Ejecutá <strong>Abrir-Dashboard-Windows.bat</strong> (incluido en el ZIP) para abrirlo automáticamente en <code>http://localhost:8765/admin.html</code>.";
-      box.classList.remove("hidden");
+      showAuthError(
+        "<strong>Abriste el archivo directo (file://):</strong> El login de Google requiere HTTP/HTTPS.<br><br>" +
+        "Podés abrir tu panel en <code>https://gen-lang-client-0699193083.web.app/admin.html</code> o levantar un servidor local en la carpeta <code>public/</code> (ej. <code>npx serve public</code>) y abrirlo en <code>http://localhost</code>."
+      );
     }
 
     function showToast(msg) {
@@ -719,7 +841,7 @@
       t.textContent = msg;
       t.classList.remove("hidden");
       clearTimeout(t._timer);
-      t._timer = setTimeout(() => t.classList.add("hidden"), 3200);
+      t._timer = setTimeout(() => t.classList.add("hidden"), 3400);
     }
 
     function escapeHtml(str) {
@@ -736,6 +858,35 @@
       box.classList.remove("hidden");
     }
 
+    function switchTab(target) {
+      if (!TABS.includes(target)) return;
+      document.querySelectorAll(".tab-btn").forEach((b) => {
+        b.classList.toggle("active", b.dataset.tab === target);
+      });
+      TABS.forEach((name) => {
+        $(`tab-${name}`)?.classList.toggle("hidden", name !== target);
+      });
+      if (target === "map" && state.map) {
+        setTimeout(() => state.map.invalidateSize(), 120);
+      }
+    }
+
+    function focusPointOnMap(lat, lng, label) {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+        showToast("⚠️ Este registro no tiene coordenadas GPS válidas.");
+        return;
+      }
+      switchTab("map");
+      if (state.map) {
+        setTimeout(() => {
+          state.map.invalidateSize();
+          state.map.setView([lat, lng], 14, { animate: true });
+          if (label) showToast(`📍 Enfocado: ${label}`);
+        }, 160);
+      }
+    }
+
+    // Auth flow
     $("btn-google-login").addEventListener("click", async () => {
       $("auth-error").classList.add("hidden");
       const provider = new GoogleAuthProvider();
@@ -747,7 +898,7 @@
           const host = window.location.hostname;
           showAuthError(
             `<strong>Dominio aún no autorizado en Firebase Auth:</strong> <code>${escapeHtml(host)}</code><br><br>` +
-            `Abrí <strong>Firebase Console → Authentication → Settings → Authorized domains</strong> y agregá ese dominio (o usá localhost) para habilitar el popup de Google.`
+            `Abrí <strong>Firebase Console → Authentication → Settings → Authorized domains</strong> y agregá ese dominio para habilitar el popup de Google.`
           );
         } else {
           showAuthError(`Error al iniciar sesión: ${escapeHtml(err.message || err.code)}`);
@@ -757,92 +908,274 @@
 
     $("btn-logout").addEventListener("click", () => signOut(auth));
 
-    // Tabs switching
+    // Tabs & KPI jump cards
     document.querySelectorAll(".tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        const target = btn.dataset.tab;
-        ["map", "alerts", "drivers", "licenses", "users", "features", "updates", "baul", "sos"].forEach((name) => {
-          $(`tab-${name}`).classList.toggle("hidden", name !== target);
-        });
-        if (target === "map" && state.map) {
-          setTimeout(() => state.map.invalidateSize(), 120);
-        }
-      });
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
+    document.querySelectorAll("[data-jump-tab]").forEach((card) => {
+      card.addEventListener("click", () => switchTab(card.dataset.jumpTab));
     });
 
-    function initMap() {
-      if (state.map) return;
-      state.map = L.map("live-map").setView([-35.2, -59.5], 6);
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        attribution: "&copy; OpenStreetMap &copy; CARTO",
-        maxZoom: 19
-      }).addTo(state.map);
-      state.markerLayer = L.layerGroup().addTo(state.map);
-      $("btn-fit-map").addEventListener("click", () => {
-        state.map.setView([-35.2, -59.5], 6);
+    // Zero-API-key Leaflet map setup + multi-provider failover
+    const ADMIN_TILE_PROVIDERS = [
+      {
+        name: "OpenStreetMap",
+        url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        darkFilter: true,
+        options: { maxZoom: 19, attribution: "&copy; OpenStreetMap" }
+      },
+      {
+        name: "ArcGIS World Street",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        darkFilter: true,
+        options: { maxZoom: 19, attribution: "&copy; Esri &amp; OpenStreetMap" }
+      },
+      {
+        name: "CARTO Dark",
+        url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        darkFilter: false,
+        options: { maxZoom: 19, subdomains: "abcd", attribution: "&copy; OpenStreetMap &amp; CARTO" }
+      }
+    ];
+    let adminTileLayer = null;
+    let adminTileIndex = 0;
+    let adminTileErrors = 0;
+
+    function ensureLeafletLoaded() {
+      if (typeof window.L !== "undefined") return Promise.resolve(true);
+      return new Promise((resolve) => {
+        const css = document.createElement("link");
+        css.rel = "stylesheet";
+        css.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(css);
+
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+        script.onload = () => resolve(typeof window.L !== "undefined");
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
       });
     }
 
-    const PRESENCE_TTL_MS = 150000; // 2.5 minutos (igual que PresenceRepository.kt)
+    function applyAdminTileProvider(index) {
+      if (!state.map || typeof window.L === "undefined") return;
+      const idx = Math.max(0, Math.min(ADMIN_TILE_PROVIDERS.length - 1, Number(index) || 0));
+      const provider = ADMIN_TILE_PROVIDERS[idx];
+      adminTileIndex = idx;
+      adminTileErrors = 0;
+      if ($("select-map-style")) $("select-map-style").value = String(idx);
+      if (adminTileLayer) {
+        try { state.map.removeLayer(adminTileLayer); } catch (_) {}
+      }
+      const tilePane = state.map.getPane("tilePane");
+      if (tilePane) {
+        tilePane.classList.toggle("osm-dark", Boolean(provider.darkFilter));
+      }
+      adminTileLayer = window.L.tileLayer(provider.url, provider.options);
+      adminTileLayer.on("tileerror", () => {
+        adminTileErrors += 1;
+        if (adminTileErrors >= 4 && adminTileIndex + 1 < ADMIN_TILE_PROVIDERS.length) {
+          applyAdminTileProvider(adminTileIndex + 1);
+        }
+      });
+      adminTileLayer.addTo(state.map);
+    }
+
+    async function initMap() {
+      if (state.map) return;
+      const ready = await ensureLeafletLoaded();
+      if (!ready || typeof window.L === "undefined") {
+        const err = $("map-error-banner");
+        if (err) {
+          err.innerHTML = "No se pudo cargar la librería gratuita del mapa (Leaflet). Verificá tu conexión a internet o desactivá bloqueadores de CDN.";
+          err.classList.remove("hidden");
+        }
+        return;
+      }
+      state.map = window.L.map("live-map").setView([-35.2, -59.5], 6);
+      applyAdminTileProvider(0);
+      state.markerLayer = window.L.layerGroup().addTo(state.map);
+
+      $("btn-fit-map").addEventListener("click", () => {
+        state.map.setView([-35.2, -59.5], 6);
+      });
+      $("btn-fit-active").addEventListener("click", fitToActiveMarkers);
+      $("select-map-style").addEventListener("change", (e) => {
+        applyAdminTileProvider(Number(e.target.value));
+      });
+      ["layer-drivers", "layer-seguime", "layer-alerts", "layer-sos", "layer-baul"].forEach((id) => {
+        $(id)?.addEventListener("change", refreshMapMarkers);
+      });
+      refreshMapMarkers();
+    }
+
+    const PRESENCE_TTL_MS = 150000;
     function isFreshDriver(d, now = Date.now()) {
       return typeof d.timestampMillis === "number" && (now - d.timestampMillis) < PRESENCE_TTL_MS;
     }
 
-    function refreshMapMarkers() {
-      if (!state.markerLayer) return;
-      state.markerLayer.clearLayers();
+    function fitToActiveMarkers() {
+      if (!state.map || typeof window.L === "undefined") return;
+      const pts = [];
       const now = Date.now();
-
       state.drivers.filter((d) => isFreshDriver(d, now)).forEach((d) => {
-        if (typeof d.latitude !== "number" || typeof d.longitude !== "number" || (d.latitude === 0 && d.longitude === 0)) return;
-        const m = L.circleMarker([d.latitude, d.longitude], {
-          radius: 8, color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.85, weight: 2
-        });
-        m.bindPopup(`<strong>🚗 ${escapeHtml(d.userName || "Conductor")}</strong><br>${escapeHtml(d.routeName || "En ruta")}<br>${Math.round(d.speedKmH || 0)} km/h`);
-        m.addTo(state.markerLayer);
+        if (typeof d.latitude === "number" && typeof d.longitude === "number" && (d.latitude !== 0 || d.longitude !== 0)) {
+          pts.push([d.latitude, d.longitude]);
+        }
       });
-
+      state.seguime.filter((s) => s.status === "active").forEach((s) => {
+        if (typeof s.latitude === "number" && typeof s.longitude === "number" && (s.latitude !== 0 || s.longitude !== 0)) {
+          pts.push([s.latitude, s.longitude]);
+        }
+      });
       state.alerts.filter((a) => a.status === "active").forEach((a) => {
-        if (typeof a.latitude !== "number" || typeof a.longitude !== "number") return;
-        const m = L.circleMarker([a.latitude, a.longitude], {
-          radius: 7, color: "#ef4444", fillColor: "#f59e0b", fillOpacity: 0.9, weight: 2
-        });
-        m.bindPopup(`<strong>⚠️ ${escapeHtml(a.type)}</strong><br>${escapeHtml(a.roadName || "Ruta")}<br>${escapeHtml(a.description || "")}`);
-        m.addTo(state.markerLayer);
+        if (typeof a.latitude === "number" && typeof a.longitude === "number") {
+          pts.push([a.latitude, a.longitude]);
+        }
       });
-
       state.sos.filter((s) => s.status === "active").forEach((s) => {
-        if (typeof s.latitude !== "number" || typeof s.longitude !== "number") return;
-        const m = L.circleMarker([s.latitude, s.longitude], {
-          radius: 9, color: "#fff", fillColor: "#ef4444", fillOpacity: 1, weight: 2
-        });
-        m.bindPopup(`<strong>🚨 SOS ${escapeHtml(s.assistanceType)}</strong><br>${escapeHtml(s.ownerName)} • ${escapeHtml(s.licensePlate)}`);
-        m.addTo(state.markerLayer);
+        if (typeof s.latitude === "number" && typeof s.longitude === "number") {
+          pts.push([s.latitude, s.longitude]);
+        }
       });
+      if (pts.length === 0) {
+        state.map.setView([-35.2, -59.5], 6);
+        showToast("No hay marcadores activos con GPS; encuadrando Argentina.");
+        return;
+      }
+      if (pts.length === 1) {
+        state.map.setView(pts[0], 13);
+      } else {
+        state.map.fitBounds(window.L.latLngBounds(pts), { padding: [40, 40], maxZoom: 14 });
+      }
+    }
 
-      state.baul.filter((b) => b.status === "activo").forEach((b) => {
-        if (typeof b.latitude !== "number" || typeof b.longitude !== "number" || (b.latitude === 0 && b.longitude === 0)) return;
-        const m = L.circleMarker([b.latitude, b.longitude], {
-          radius: 7, color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 0.85, weight: 2
+    function refreshMapMarkers() {
+      const now = Date.now();
+      const freshDrivers = state.drivers.filter((d) => isFreshDriver(d, now));
+      const activeSeguime = state.seguime.filter((s) => s.status === "active" && (!s.expiresAtMillis || s.expiresAtMillis > now));
+      const activeAlerts = state.alerts.filter((a) => a.status === "active");
+      const activeSos = state.sos.filter((s) => s.status === "active");
+      const activeBaul = state.baul.filter((b) => b.status === "activo");
+
+      if ($("cnt-layer-drivers")) $("cnt-layer-drivers").textContent = freshDrivers.length;
+      if ($("cnt-layer-seguime")) $("cnt-layer-seguime").textContent = activeSeguime.length;
+      if ($("cnt-layer-alerts")) $("cnt-layer-alerts").textContent = activeAlerts.length;
+      if ($("cnt-layer-sos")) $("cnt-layer-sos").textContent = activeSos.length;
+      if ($("cnt-layer-baul")) $("cnt-layer-baul").textContent = activeBaul.length;
+
+      if (!state.markerLayer || typeof window.L === "undefined") return;
+      state.markerLayer.clearLayers();
+
+      if ($("layer-drivers")?.checked) {
+        freshDrivers.forEach((d) => {
+          if (typeof d.latitude !== "number" || typeof d.longitude !== "number" || (d.latitude === 0 && d.longitude === 0)) return;
+          const m = window.L.circleMarker([d.latitude, d.longitude], {
+            radius: 8, color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.85, weight: 2
+          });
+          m.bindPopup(`<strong>🚗 ${escapeHtml(d.userName || "Conductor")}</strong><br>${escapeHtml(d.routeName || "En ruta")}<br>${Math.round(d.speedKmH || 0)} km/h`);
+          m.addTo(state.markerLayer);
         });
-        m.bindPopup(`<strong>🧳 Baúl Vial (${escapeHtml(b.type)})</strong><br>${escapeHtml(b.title)}<br>${escapeHtml(b.roadName)}`);
-        m.addTo(state.markerLayer);
+      }
+
+      if ($("layer-seguime")?.checked) {
+        activeSeguime.forEach((s) => {
+          if (typeof s.latitude !== "number" || typeof s.longitude !== "number" || (s.latitude === 0 && s.longitude === 0)) return;
+          const m = window.L.circleMarker([s.latitude, s.longitude], {
+            radius: 8, color: "#ffffff", fillColor: "#c084fc", fillOpacity: 0.95, weight: 2
+          });
+          m.bindPopup(
+            `<strong>💜 Seguime: ${escapeHtml(s.driverName || "Conductor")}</strong><br>` +
+            `Destino: ${escapeHtml(s.destinationTitle || "-")}<br>` +
+            `<a href="/seguime.html?s=${encodeURIComponent(s.id)}" target="_blank" rel="noopener noreferrer" style="color:#fbbf24;">Abrir mapa Seguime ↗</a>`
+          );
+          m.addTo(state.markerLayer);
+        });
+      }
+
+      if ($("layer-alerts")?.checked) {
+        activeAlerts.forEach((a) => {
+          if (typeof a.latitude !== "number" || typeof a.longitude !== "number") return;
+          const m = window.L.circleMarker([a.latitude, a.longitude], {
+            radius: 7, color: "#ef4444", fillColor: "#f59e0b", fillOpacity: 0.9, weight: 2
+          });
+          m.bindPopup(`<strong>⚠️ ${escapeHtml(a.type)}</strong><br>${escapeHtml(a.roadName || "Ruta")}<br>${escapeHtml(a.description || "")}`);
+          m.addTo(state.markerLayer);
+        });
+      }
+
+      if ($("layer-sos")?.checked) {
+        activeSos.forEach((s) => {
+          if (typeof s.latitude !== "number" || typeof s.longitude !== "number") return;
+          const m = window.L.circleMarker([s.latitude, s.longitude], {
+            radius: 9, color: "#fff", fillColor: "#ef4444", fillOpacity: 1, weight: 2
+          });
+          m.bindPopup(`<strong>🚨 SOS ${escapeHtml(s.assistanceType)}</strong><br>${escapeHtml(s.ownerName)} • ${escapeHtml(s.licensePlate)}`);
+          m.addTo(state.markerLayer);
+        });
+      }
+
+      if ($("layer-baul")?.checked) {
+        activeBaul.forEach((b) => {
+          if (typeof b.latitude !== "number" || typeof b.longitude !== "number" || (b.latitude === 0 && b.longitude === 0)) return;
+          const m = window.L.circleMarker([b.latitude, b.longitude], {
+            radius: 7, color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 0.85, weight: 2
+          });
+          m.bindPopup(`<strong>🧳 Baúl Vial (${escapeHtml(b.type)})</strong><br>${escapeHtml(b.title)}<br>${escapeHtml(b.roadName)}`);
+          m.addTo(state.markerLayer);
+        });
+      }
+    }
+
+    function renderMapInsights() {
+      const activeAlerts = state.alerts.filter((a) => a.status === "active");
+      const counts = new Map();
+      activeAlerts.forEach((a) => {
+        const road = (a.roadName || "Ruta sin especificar").trim() || "Ruta sin especificar";
+        counts.set(road, (counts.get(road) || 0) + 1);
       });
+      const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+      const rankBox = $("dangerous-routes-list");
+      if (rankBox) {
+        rankBox.innerHTML = top.length === 0
+          ? "No hay alertas activas acumuladas por ruta actualmente."
+          : top.map(([road, cnt], idx) => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--surface-2);">
+                <span><strong style="color:${idx === 0 ? "var(--red)" : "var(--amber-light)"};">#${idx + 1}</strong> ${escapeHtml(road)}</span>
+                <span class="tag ${idx === 0 ? "tag-red" : "tag-amber"}">${cnt} alertas</span>
+              </div>
+            `).join("");
+      }
+
+      const now = Date.now();
+      const verifiedDni = state.users.filter((u) => u.isDniVerified).length;
+      const betaTesters = state.users.filter((u) => u.isBetaTester).length;
+      const activeSeguime = state.seguime.filter((s) => s.status === "active" && (!s.expiresAtMillis || s.expiresAtMillis > now)).length;
+      const resolvedAlerts = state.alerts.filter((a) => a.status === "resolved").length;
+      const sumBox = $("network-summary-list");
+      if (sumBox) {
+        sumBox.innerHTML =
+          `• Sesiones <strong>Seguime</strong> activas: <strong style="color:var(--purple);">${activeSeguime}</strong><br>` +
+          `• Alertas resueltas históricas en base: <strong style="color:var(--green);">${resolvedAlerts}</strong><br>` +
+          `• Cuentas con <strong>DNI verificado</strong>: <strong style="color:var(--blue);">${verifiedDni}</strong> · Beta Testers: <strong>${betaTesters}</strong><br>` +
+          `• Aviso de nueva APK: <strong>${state.appUpdate?.enabled ? `ACTIVO (v${escapeHtml(state.appUpdate.latestVersionName || state.appUpdate.latestVersionCode)})` : "Inactivo"}</strong>`;
+      }
     }
 
     function renderKpis() {
+      const now = Date.now();
       const activeAlerts = state.alerts.filter((a) => a.status === "active");
       const criticalPotholes = activeAlerts.filter((a) => a.type === "pozo" && (a.depthCm || 0) >= 15);
       const activeSos = state.sos.filter((s) => s.status === "active");
       const waitingHitch = state.hitchhikes.filter((h) => h.status === "waiting");
-      const now = Date.now();
       const liveDrivers = state.drivers.filter((d) => isFreshDriver(d, now));
+      const activeSeguime = state.seguime.filter((s) => s.status === "active" && (!s.expiresAtMillis || s.expiresAtMillis > now));
       const proUsers = state.users.filter((u) => u.isProUser && (!u.proExpiresAtMillis || u.proExpiresAtMillis > now));
+      const betaUsers = state.users.filter((u) => u.isBetaTester);
 
       $("kpi-drivers").textContent = liveDrivers.length;
-      $("kpi-driving").textContent = `${liveDrivers.filter((d) => d.isDriving).length} circulando ahora`;
+      $("kpi-driving").textContent = `${liveDrivers.filter((d) => d.isDriving).length} circulando · ${activeSeguime.length} Seguime`;
       $("kpi-alerts").textContent = activeAlerts.length;
       $("kpi-potholes").textContent = `${criticalPotholes.length} pozos críticos (≥15cm)`;
       $("kpi-sos").textContent = activeSos.length;
@@ -850,16 +1183,19 @@
       $("kpi-baul").textContent = state.baul.filter((b) => b.status === "activo").length;
       $("kpi-baul-claims").textContent = `${state.baul.filter((b) => b.claimStatus === "pendiente").length} reclamos pendientes`;
       $("kpi-users").textContent = state.users.length;
-      $("kpi-pro-users").textContent = `${proUsers.length} con plan PRO activo`;
+      $("kpi-pro-users").textContent = `${proUsers.length} PRO · ${betaUsers.length} Beta`;
     }
 
     function renderAlerts() {
-      const q = $("filter-alerts").value.trim().toLowerCase();
-      const statusFilter = $("filter-alert-status").value;
+      const q = ($("filter-alerts")?.value || "").trim().toLowerCase();
+      const statusFilter = $("filter-alert-status")?.value || "active";
+      const typeFilter = $("filter-alert-type")?.value || "all";
+
       const rows = state.alerts.filter((a) => {
         if (statusFilter !== "all" && a.status !== statusFilter) return false;
+        if (typeFilter !== "all" && a.type !== typeFilter) return false;
         if (!q) return true;
-        return (`${a.roadName || ""} ${a.description || ""} ${a.type || ""}`).toLowerCase().includes(q);
+        return (`${a.roadName || ""} ${a.description || ""} ${a.type || ""} ${a.reporterName || ""} ${a.connectsTowns || ""}`).toLowerCase().includes(q);
       });
 
       $("tbody-alerts").innerHTML = rows.length === 0
@@ -867,27 +1203,46 @@
         : rows.map((a) => `
           <tr>
             <td><span class="tag tag-amber">${escapeHtml(a.type)}</span></td>
-            <td><strong>${escapeHtml(a.roadName || "Ruta sin nombre")}</strong><br><span style="color:var(--muted);font-size:11px;">${Number(a.latitude || 0).toFixed(4)}, ${Number(a.longitude || 0).toFixed(4)}</span></td>
-            <td>${escapeHtml(a.description || "-")}${a.depthCm ? ` <span style="color:var(--red);">(${a.depthCm} cm)</span>` : ""}</td>
-            <td>${a.confirmations || 1}</td>
+            <td>
+              <strong>${escapeHtml(a.roadName || "Ruta sin nombre")}</strong>
+              ${a.connectsTowns ? `<br><span style="color:var(--blue);font-size:11px;">${escapeHtml(a.connectsTowns)}</span>` : ""}
+              <br><span style="color:var(--muted);font-size:11px;">${Number(a.latitude || 0).toFixed(4)}, ${Number(a.longitude || 0).toFixed(4)}</span>
+            </td>
+            <td>
+              ${escapeHtml(a.description || "-")}${a.depthCm ? ` <span style="color:var(--red);font-weight:700;">(${a.depthCm} cm)</span>` : ""}
+              <br><span style="color:var(--muted);font-size:11px;">Por: ${escapeHtml(a.reporterName || "Conductor")}</span>
+            </td>
+            <td style="white-space:nowrap;">👍 ${a.confirmations || 1} <span style="color:var(--muted);">· 👎 ${a.notThereVotes || 0}</span></td>
             <td><span class="tag ${a.status === "active" ? "tag-red" : "tag-green"}">${escapeHtml(a.status)}</span></td>
-            <td style="white-space:nowrap;">
-              ${a.status === "active" ? `<button class="btn btn-green btn-sm" onclick="window.__adminAction('resolveAlert','${escapeHtml(a.id)}')">Resolver</button>` : ""}
-              <button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','alerts','${escapeHtml(a.id)}')">Eliminar</button>
+            <td>
+              <div class="actions-row">
+                <button class="btn btn-ghost btn-sm" data-action="focusMap" data-lat="${Number(a.latitude || 0)}" data-lng="${Number(a.longitude || 0)}" data-arg="${escapeHtml(a.roadName || a.type)}">📍 Ver</button>
+                ${a.status === "active"
+                  ? `<button class="btn btn-green btn-sm" data-action="resolveAlert" data-id="${escapeHtml(a.id)}">Resolver</button>`
+                  : `<button class="btn btn-amber btn-sm" data-action="reopenAlert" data-id="${escapeHtml(a.id)}">Reactivar</button>`}
+                <button class="btn btn-red btn-sm" data-action="deleteDoc" data-col="alerts" data-id="${escapeHtml(a.id)}">Eliminar</button>
+              </div>
             </td>
           </tr>
         `).join("");
     }
 
-    function renderDrivers() {
+    function formatRelativeAgo(millis, now = Date.now()) {
+      if (!millis) return "Sin registro";
+      const secs = Math.max(0, Math.round((now - millis) / 1000));
+      if (secs < 60) return `hace ${secs}s`;
+      if (secs < 3600) return `hace ${Math.floor(secs / 60)}m`;
+      return `hace ${Math.floor(secs / 3600)}h`;
+    }
+
+    function renderDriversAndSeguime() {
       const now = Date.now();
       const sorted = [...state.drivers].sort((a, b) => (b.timestampMillis || 0) - (a.timestampMillis || 0));
       $("tbody-drivers").innerHTML = sorted.length === 0
         ? `<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:24px;">No hay conductores transmitiendo telemetría en este instante.</td></tr>`
         : sorted.map((d) => {
           const fresh = isFreshDriver(d, now);
-          const secs = d.timestampMillis ? Math.max(0, Math.round((now - d.timestampMillis) / 1000)) : 9999;
-          const ago = secs < 60 ? `hace ${secs}s` : secs < 3600 ? `hace ${Math.floor(secs / 60)}m` : `hace ${Math.floor(secs / 3600)}h`;
+          const ago = formatRelativeAgo(d.timestampMillis, now);
           const statusBadge = !fresh
             ? `<span class="tag tag-slate">⚫ Desconectado</span>`
             : (d.isDriving ? `<span class="tag tag-green">🚗 ${Math.round(d.speedKmH || 0)} km/h</span>` : `<span class="tag tag-amber">🅿️ Detenido</span>`);
@@ -898,25 +1253,58 @@
               <td>${statusBadge}</td>
               <td style="font-size:12px;color:var(--muted);">${Number(d.latitude || 0).toFixed(4)}, ${Number(d.longitude || 0).toFixed(4)}</td>
               <td style="color:var(--muted);">${ago}</td>
-              <td><button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','online_presence','${escapeHtml(d.id)}')">Limpiar</button></td>
+              <td>
+                <div class="actions-row">
+                  <button class="btn btn-ghost btn-sm" data-action="focusMap" data-lat="${Number(d.latitude || 0)}" data-lng="${Number(d.longitude || 0)}" data-arg="${escapeHtml(d.userName || "Conductor")}">📍 Ver</button>
+                  <button class="btn btn-red btn-sm" data-action="deleteDoc" data-col="online_presence" data-id="${escapeHtml(d.id)}">Limpiar</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("");
+
+      const segSorted = [...state.seguime].sort((a, b) => (b.expiresAtMillis || 0) - (a.expiresAtMillis || 0));
+      $("tbody-seguime").innerHTML = segSorted.length === 0
+        ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px;">No hay sesiones de Seguime registradas.</td></tr>`
+        : segSorted.map((s) => {
+          const active = s.status === "active" && (!s.expiresAtMillis || s.expiresAtMillis > now);
+          const stTag = active
+            ? `<span class="tag tag-purple">🟣 En vivo</span>`
+            : `<span class="tag tag-slate">${escapeHtml(s.status || "cerrada")}</span>`;
+          return `
+            <tr style="${active ? "" : "opacity:0.6;"}">
+              <td><strong>${escapeHtml(s.driverName || "Conductor")}</strong><br><span style="color:var(--muted);font-size:12px;">${escapeHtml(s.vehicleSummary || "-")}</span></td>
+              <td>${escapeHtml(s.originName || "Origen")} → <strong>${escapeHtml(s.destinationTitle || "Destino")}</strong></td>
+              <td style="font-size:12px;">${Math.round(s.speedKmH || 0)} km/h<br><span style="color:var(--muted);">${Number(s.latitude || 0).toFixed(4)}, ${Number(s.longitude || 0).toFixed(4)}</span></td>
+              <td>${stTag}</td>
+              <td>
+                <div class="actions-row">
+                  <button class="btn btn-ghost btn-sm" data-action="focusMap" data-lat="${Number(s.latitude || 0)}" data-lng="${Number(s.longitude || 0)}" data-arg="Seguime: ${escapeHtml(s.driverName)}">📍 Ver</button>
+                  <a class="btn btn-blue btn-sm" href="/seguime.html?s=${encodeURIComponent(s.id)}" target="_blank" rel="noopener noreferrer">🗺️ Abrir</a>
+                  ${s.status === "active" ? `<button class="btn btn-amber btn-sm" data-action="closeSeguime" data-id="${escapeHtml(s.id)}">Cerrar</button>` : ""}
+                  <button class="btn btn-red btn-sm" data-action="deleteDoc" data-col="seguime_sessions" data-id="${escapeHtml(s.id)}">Eliminar</button>
+                </div>
+              </td>
             </tr>
           `;
         }).join("");
     }
 
-    function renderLicenses() {
+    function renderUsersUnified() {
       const now = Date.now();
-      const q = ($("filter-licenses-q")?.value || "").trim().toLowerCase();
-      const st = $("filter-licenses-status")?.value || "all";
+      const q = ($("filter-users")?.value || "").trim().toLowerCase();
+      const st = $("filter-users-status")?.value || "all";
 
       let activeCount = 0;
       let unlimitedCount = 0;
       let expiringCount = 0;
+      let betaCount = 0;
       let freeCount = 0;
 
       state.users.forEach((u) => {
         const exp = Number(u.proExpiresAtMillis || 0);
         const isPro = Boolean(u.isProUser) && (exp === 0 || exp > now);
+        if (u.isBetaTester) betaCount++;
         if (!isPro) {
           freeCount++;
         } else {
@@ -929,6 +1317,7 @@
       if ($("lic-kpi-active")) $("lic-kpi-active").textContent = activeCount;
       if ($("lic-kpi-unlimited")) $("lic-kpi-unlimited").textContent = unlimitedCount;
       if ($("lic-kpi-expiring")) $("lic-kpi-expiring").textContent = expiringCount;
+      if ($("lic-kpi-beta")) $("lic-kpi-beta").textContent = betaCount;
       if ($("lic-kpi-free")) $("lic-kpi-free").textContent = freeCount;
 
       const rows = state.users.filter((u) => {
@@ -937,15 +1326,15 @@
         if (st === "active" && !isPro) return false;
         if (st === "unlimited" && !(isPro && exp === 0)) return false;
         if (st === "expiring" && !(isPro && exp > now && (exp - now) <= 7 * 86400000)) return false;
+        if (st === "beta" && !u.isBetaTester) return false;
+        if (st === "verified" && !u.isDniVerified) return false;
         if (st === "free" && isPro) return false;
         if (!q) return true;
-        return (`${u.name || ""} ${u.email || ""} ${u.defaultPlate || ""} ${u.dni || ""}`).toLowerCase().includes(q);
+        return (`${u.name || ""} ${u.email || ""} ${u.defaultPlate || ""} ${u.dni || ""} ${u.referralCode || ""}`).toLowerCase().includes(q);
       });
 
-      const tbody = $("tbody-licenses");
-      if (!tbody) return;
-      tbody.innerHTML = rows.length === 0
-        ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:24px;">No hay cuentas que coincidan con el filtro de licencias.</td></tr>`
+      $("tbody-users").innerHTML = rows.length === 0
+        ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:24px;">No hay cuentas que coincidan con el filtro.</td></tr>`
         : rows.map((u) => {
           const exp = Number(u.proExpiresAtMillis || 0);
           const proActive = Boolean(u.isProUser) && (exp === 0 || exp > now);
@@ -959,66 +1348,39 @@
                 : `<span class="tag tag-amber">🌟 PRO (${daysLeft}d)</span>`;
           const expText = !proActive
             ? (exp > 0 ? `Venció ${new Date(exp).toLocaleDateString("es-AR")}` : "Sin licencia")
-            : (exp === 0 ? "Vitalicia / Sin vencimiento" : new Date(exp).toLocaleDateString("es-AR"));
+            : (exp === 0 ? "Vitalicia / Sin vencimiento" : `Vence ${new Date(exp).toLocaleDateString("es-AR")}`);
 
           return `
             <tr>
               <td>
-                <strong>${escapeHtml(u.name || "Sin nombre")}</strong><br>
-                <span style="color:var(--muted);font-size:12px;">${escapeHtml(u.email || u.userId)}</span>
+                <strong>${escapeHtml(u.name || "Sin nombre")}</strong>
                 ${u.isBetaTester ? ` <span class="tag tag-blue">🧪 BETA</span>` : ""}
-              </td>
-              <td>${badge}</td>
-              <td style="font-size:12px;color:var(--muted);">${escapeHtml(expText)}</td>
-              <td><strong>${u.xpTotal || u.pointsRuta || 0} XP</strong></td>
-              <td style="white-space:nowrap;">
-                <button class="btn btn-blue btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 7)">+7d</button>
-                <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 30)">+30d</button>
-                <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 90)">+90d</button>
-                <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 365)">+1 año</button>
-                <button class="btn btn-green btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 0)">∞ Ilim.</button>
-                <button class="btn btn-ghost btn-sm" onclick="window.__adminAction('revokePro','${escapeHtml(u.id)}')">Revocar</button>
-              </td>
-            </tr>
-          `;
-        }).join("");
-    }
-
-    function renderUsers() {
-      const q = $("filter-users").value.trim().toLowerCase();
-      const now = Date.now();
-      const rows = state.users.filter((u) => {
-        if (!q) return true;
-        return (`${u.name || ""} ${u.email || ""} ${u.defaultPlate || ""} ${u.dni || ""}`).toLowerCase().includes(q);
-      });
-
-      $("tbody-users").innerHTML = rows.length === 0
-        ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:24px;">No hay usuarios que coincidan.</td></tr>`
-        : rows.map((u) => {
-          const exp = Number(u.proExpiresAtMillis || 0);
-          const proActive = u.isProUser && (exp === 0 || exp > now);
-          const daysLeft = exp > now ? Math.ceil((exp - now) / 86400000) : 0;
-          return `
-            <tr>
-              <td>
-                <strong>${escapeHtml(u.name || "Sin nombre")}</strong><br>
-                <span style="color:var(--muted);font-size:12px;">${escapeHtml(u.email || u.userId)}</span>
+                <br><span style="color:var(--muted);font-size:12px;">${escapeHtml(u.email || u.userId)}</span>
+                ${u.referralCode ? `<br><code style="font-size:11px;color:var(--amber-light);">${escapeHtml(u.referralCode)}</code>` : ""}
               </td>
               <td>
                 DNI: ${escapeHtml(u.dni || "-")} ${u.isDniVerified ? `<span class="tag tag-green">Verificado</span>` : `<span class="tag tag-slate">Sin verificar</span>`}<br>
                 <span style="color:var(--muted);font-size:12px;">${escapeHtml(u.defaultVehicle || "")} ${escapeHtml(u.defaultPlate || "")}</span>
               </td>
               <td>
-                ${proActive ? `<span class="tag tag-amber">🌟 PRO (${exp === 0 ? "∞ Ilimitado" : `${daysLeft}d`})</span>` : `<span class="tag tag-slate">📱 Freemium</span>`}
-                ${u.isBetaTester ? `<br><span class="tag tag-blue" style="margin-top:4px;">🧪 BETA TESTER</span>` : ""}
+                ${badge}<br>
+                <span style="color:var(--muted);font-size:11px;">${escapeHtml(expText)}</span>
               </td>
-              <td><strong>${u.xpTotal || u.pointsRuta || 0} XP</strong><br><span style="color:var(--muted);font-size:11px;">${u.pointsRuta || 0} pts canjeables</span></td>
-              <td style="white-space:nowrap;">
-                <button class="btn ${u.isBetaTester ? "btn-blue" : "btn-ghost"} btn-sm" onclick="window.__adminAction('toggleBeta','${escapeHtml(u.id)}', ${!u.isBetaTester})">${u.isBetaTester ? "Quitar Beta" : "🧪 Activar Beta"}</button>
-                <button class="btn btn-amber btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 30)">+30d PRO</button>
-                <button class="btn btn-green btn-sm" onclick="window.__adminAction('grantPro','${escapeHtml(u.id)}', 0)">∞ Ilim.</button>
-                <button class="btn btn-ghost btn-sm" onclick="window.__adminAction('revokePro','${escapeHtml(u.id)}')">Freemium</button>
-                <button class="btn btn-blue btn-sm" onclick="window.__adminAction('toggleDni','${escapeHtml(u.id)}', ${!u.isDniVerified})">${u.isDniVerified ? "Quitar DNI" : "Verificar DNI"}</button>
+              <td>
+                <strong>${u.xpTotal || u.pointsRuta || 0} XP</strong><br>
+                <span style="color:var(--muted);font-size:11px;">${u.pointsRuta || 0} pts · ${u.referralCount || 0} ref.</span>
+              </td>
+              <td>
+                <div class="actions-row">
+                  <button class="btn btn-blue btn-sm" data-action="grantPro" data-id="${escapeHtml(u.id)}" data-arg="7">+7d</button>
+                  <button class="btn btn-amber btn-sm" data-action="grantPro" data-id="${escapeHtml(u.id)}" data-arg="30">+30d</button>
+                  <button class="btn btn-amber btn-sm" data-action="grantPro" data-id="${escapeHtml(u.id)}" data-arg="90">+90d</button>
+                  <button class="btn btn-amber btn-sm" data-action="grantPro" data-id="${escapeHtml(u.id)}" data-arg="365">+1a</button>
+                  <button class="btn btn-green btn-sm" data-action="grantPro" data-id="${escapeHtml(u.id)}" data-arg="0">∞</button>
+                  <button class="btn btn-ghost btn-sm" data-action="revokePro" data-id="${escapeHtml(u.id)}">Free</button>
+                  <button class="btn ${u.isBetaTester ? "btn-blue" : "btn-ghost"} btn-sm" data-action="toggleBeta" data-id="${escapeHtml(u.id)}" data-arg="${!u.isBetaTester}">${u.isBetaTester ? "Quitar Beta" : "🧪 Beta"}</button>
+                  <button class="btn btn-ghost btn-sm" data-action="toggleDni" data-id="${escapeHtml(u.id)}" data-arg="${!u.isDniVerified}">${u.isDniVerified ? "Quitar DNI" : "🪪 DNI"}</button>
+                </div>
               </td>
             </tr>
           `;
@@ -1049,10 +1411,12 @@
             <td><strong>${f.name}</strong></td>
             <td style="color:var(--muted);font-size:12px;">${f.desc}</td>
             <td>${badge}</td>
-            <td style="white-space:nowrap;">
-              <button class="btn ${val === "hidden" ? "btn-red" : "btn-ghost"} btn-sm" onclick="window.__setFeatureMode('${f.key}','hidden')">Oculto</button>
-              <button class="btn ${val === "beta" ? "btn-blue" : "btn-ghost"} btn-sm" onclick="window.__setFeatureMode('${f.key}','beta')">🧪 Beta</button>
-              <button class="btn ${val === "public" ? "btn-green" : "btn-ghost"} btn-sm" onclick="window.__setFeatureMode('${f.key}','public')">Público</button>
+            <td>
+              <div class="actions-row">
+                <button class="btn ${val === "hidden" ? "btn-red" : "btn-ghost"} btn-sm" data-action="setFeature" data-id="${f.key}" data-arg="hidden">Oculto</button>
+                <button class="btn ${val === "beta" ? "btn-blue" : "btn-ghost"} btn-sm" data-action="setFeature" data-id="${f.key}" data-arg="beta">🧪 Beta</button>
+                <button class="btn ${val === "public" ? "btn-green" : "btn-ghost"} btn-sm" data-action="setFeature" data-id="${f.key}" data-arg="public">Público</button>
+              </div>
             </td>
           </tr>
         `;
@@ -1060,23 +1424,48 @@
     }
 
     function renderBaul() {
-      const f = $("filter-baul-type").value;
-      const rows = state.baul.filter((b) => f === "all" || b.type === f);
+      const f = $("filter-baul-type")?.value || "all";
+      const rows = state.baul.filter((b) => {
+        if (f === "all") return true;
+        if (f === "pending_claim") return b.claimStatus === "pendiente";
+        return b.type === f;
+      });
       $("tbody-baul").innerHTML = rows.length === 0
-        ? `<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:24px;">No hay avisos en Baúl Vial todavía.</td></tr>`
-        : rows.map((b) => `
-          <tr>
-            <td><span class="tag ${b.type === "encontrado" ? "tag-green" : "tag-amber"}">${escapeHtml(b.type)}</span></td>
-            <td><strong>${escapeHtml(b.title)}</strong><br><span style="color:var(--muted);font-size:12px;">${escapeHtml(b.roadName)} • ${escapeHtml(b.publisherName || "")}</span></td>
-            <td style="font-size:12px;">${escapeHtml(b.verificationQuestion)}</td>
-            <td><span class="tag tag-blue">${escapeHtml(b.claimStatus || "sin_reclamo")}</span></td>
-            <td><span class="tag ${b.status === "activo" ? "tag-amber" : "tag-green"}">${escapeHtml(b.status)}</span></td>
-            <td style="white-space:nowrap;">
-              ${b.status === "activo" ? `<button class="btn btn-green btn-sm" onclick="window.__adminAction('markBaulReturned','${escapeHtml(b.id)}')">Marcar Devuelto</button>` : ""}
-              <button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','baul_vial','${escapeHtml(b.id)}')">Eliminar</button>
-            </td>
-          </tr>
-        `).join("");
+        ? `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:24px;">No hay avisos en Baúl Vial que coincidan.</td></tr>`
+        : rows.map((b) => {
+          const hasClaim = b.claimStatus && b.claimStatus !== "sin_reclamo";
+          const claimBlock = hasClaim
+            ? `<div style="margin-top:6px;padding:7px 9px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:12px;">
+                 <span class="tag ${b.claimStatus === "pendiente" ? "tag-amber" : b.claimStatus === "aprobado" ? "tag-green" : "tag-red"}">${escapeHtml(b.claimStatus)}</span>
+                 <strong> ${escapeHtml(b.claimantName || "Reclamante")}</strong>
+                 ${b.claimantContact ? ` (${escapeHtml(b.claimantContact)})` : ""}
+                 ${b.claimantAnswer ? `<br><span style="color:var(--muted);">Respuesta: «${escapeHtml(b.claimantAnswer)}»</span>` : ""}
+               </div>`
+            : `<span class="tag tag-slate" style="margin-top:4px;">sin reclamo</span>`;
+          return `
+            <tr>
+              <td>
+                <span class="tag ${b.type === "encontrado" ? "tag-green" : "tag-amber"}">${escapeHtml(b.type)}</span><br>
+                <span style="font-size:11px;color:var(--muted);">${escapeHtml(b.category || "")}</span>
+              </td>
+              <td><strong>${escapeHtml(b.title)}</strong><br><span style="color:var(--muted);font-size:12px;">${escapeHtml(b.roadName)} • ${escapeHtml(b.publisherName || "")}</span></td>
+              <td style="font-size:12px;">
+                <div><strong>Pregunta:</strong> ${escapeHtml(b.verificationQuestion)}</div>
+                ${claimBlock}
+              </td>
+              <td><span class="tag ${b.status === "activo" ? "tag-amber" : "tag-green"}">${escapeHtml(b.status)}</span></td>
+              <td>
+                <div class="actions-row">
+                  ${(b.latitude && b.longitude) ? `<button class="btn btn-ghost btn-sm" data-action="focusMap" data-lat="${Number(b.latitude)}" data-lng="${Number(b.longitude)}" data-arg="${escapeHtml(b.title)}">📍 Ver</button>` : ""}
+                  ${b.claimStatus === "pendiente" ? `<button class="btn btn-green btn-sm" data-action="approveBaulClaim" data-id="${escapeHtml(b.id)}">Aprobar</button>` : ""}
+                  ${b.claimStatus === "pendiente" ? `<button class="btn btn-amber btn-sm" data-action="rejectBaulClaim" data-id="${escapeHtml(b.id)}">Rechazar</button>` : ""}
+                  ${b.status === "activo" ? `<button class="btn btn-blue btn-sm" data-action="markBaulReturned" data-id="${escapeHtml(b.id)}">Devuelto</button>` : ""}
+                  <button class="btn btn-red btn-sm" data-action="deleteDoc" data-col="baul_vial" data-id="${escapeHtml(b.id)}">Eliminar</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("");
     }
 
     function renderSosAndHitchhikes() {
@@ -1084,14 +1473,20 @@
         ? `<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:18px;">Sin pedidos SOS registrados.</td></tr>`
         : state.sos.map((s) => `
           <tr>
-            <td><strong>${escapeHtml(s.ownerName)}</strong><br><span style="color:var(--muted);font-size:12px;">DNI ${escapeHtml(s.ownerDni)}</span></td>
-            <td>${escapeHtml(s.vehicleModel)}<br><span style="color:var(--amber-light);font-weight:700;">${escapeHtml(s.licensePlate)}</span></td>
+            <td>
+              <strong>${escapeHtml(s.ownerName)}</strong><br>
+              <span style="color:var(--muted);font-size:12px;">DNI ${escapeHtml(s.ownerDni)}${s.phone ? ` • Tel ${escapeHtml(s.phone)}` : ""}</span>
+            </td>
+            <td>${escapeHtml(s.vehicleModel)} ${escapeHtml(s.vehicleColor || "")}<br><span style="color:var(--amber-light);font-weight:700;">${escapeHtml(s.licensePlate)}</span></td>
             <td><span class="tag tag-red">${escapeHtml(s.assistanceType)}</span></td>
             <td style="font-size:12px;">${escapeHtml(s.routeDescription || "-")}</td>
             <td><span class="tag ${s.status === "active" ? "tag-red" : "tag-green"}">${escapeHtml(s.status)}</span></td>
             <td>
-              ${s.status === "active" ? `<button class="btn btn-green btn-sm" onclick="window.__adminAction('resolveSos','${escapeHtml(s.id)}')">Resolver</button>` : ""}
-              <button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','sos_requests','${escapeHtml(s.id)}')">Eliminar</button>
+              <div class="actions-row">
+                <button class="btn btn-ghost btn-sm" data-action="focusMap" data-lat="${Number(s.latitude || 0)}" data-lng="${Number(s.longitude || 0)}" data-arg="SOS: ${escapeHtml(s.ownerName)}">📍 Ver</button>
+                ${s.status === "active" ? `<button class="btn btn-green btn-sm" data-action="resolveSos" data-id="${escapeHtml(s.id)}">Resolver</button>` : ""}
+                <button class="btn btn-red btn-sm" data-action="deleteDoc" data-col="sos_requests" data-id="${escapeHtml(s.id)}">Eliminar</button>
+              </div>
             </td>
           </tr>
         `).join("");
@@ -1104,30 +1499,37 @@
             <td>${escapeHtml(h.pickupPoint)} → <strong>${escapeHtml(h.destination)}</strong></td>
             <td>${escapeHtml(h.pairedPlate || "-")}</td>
             <td><span class="tag ${h.status === "waiting" ? "tag-amber" : "tag-green"}">${escapeHtml(h.status)}</span></td>
-            <td><button class="btn btn-red btn-sm" onclick="window.__adminAction('deleteDoc','hitchhike_requests','${escapeHtml(h.id)}')">Eliminar</button></td>
+            <td>
+              <div class="actions-row">
+                <button class="btn btn-ghost btn-sm" data-action="focusMap" data-lat="${Number(h.latitude || 0)}" data-lng="${Number(h.longitude || 0)}" data-arg="Aventón: ${escapeHtml(h.userName)}">📍 Ver</button>
+                <button class="btn btn-red btn-sm" data-action="deleteDoc" data-col="hitchhike_requests" data-id="${escapeHtml(h.id)}">Eliminar</button>
+              </div>
+            </td>
           </tr>
         `).join("");
     }
 
     function renderAll() {
       renderKpis();
+      renderMapInsights();
       renderAlerts();
-      renderDrivers();
-      renderLicenses();
-      renderUsers();
+      renderDriversAndSeguime();
+      renderUsersUnified();
       renderFeatures();
       renderBaul();
       renderSosAndHitchhikes();
       refreshMapMarkers();
     }
 
+    // Filters
     $("filter-alerts").addEventListener("input", renderAlerts);
+    $("filter-alert-type").addEventListener("change", renderAlerts);
     $("filter-alert-status").addEventListener("change", renderAlerts);
-    $("filter-licenses-q")?.addEventListener("input", renderLicenses);
-    $("filter-licenses-status")?.addEventListener("change", renderLicenses);
-    $("filter-users").addEventListener("input", renderUsers);
+    $("filter-users").addEventListener("input", renderUsersUnified);
+    $("filter-users-status").addEventListener("change", renderUsersUnified);
     $("filter-baul-type").addEventListener("change", renderBaul);
 
+    // Feature presets
     $("btn-demo-beta-all")?.addEventListener("click", async () => {
       try {
         const nextPayload = {
@@ -1140,7 +1542,7 @@
           updatedAt: serverTimestamp()
         };
         await setDoc(doc(db, "app_config", "features"), nextPayload, { merge: true });
-        showToast("🎭 Módulos ocultos pasados a BETA: ya los ves en tu celular para mostrar a clientes.");
+        showToast("🎭 Módulos ocultos pasados a BETA.");
       } catch (e) {
         showToast(`⚠️ Error aplicando modo demo: ${e.message}`);
       }
@@ -1164,6 +1566,7 @@
       }
     });
 
+    // Maintenance actions
     $("btn-clean-tests").addEventListener("click", async () => {
       const testAlerts = state.alerts.filter((a) =>
         `${a.roadName || ""} ${a.description || ""}`.toLowerCase().match(/test|prueba/)
@@ -1182,20 +1585,41 @@
       showToast(`🗑️ Purgadas ${resolved.length} alertas resueltas`);
     });
 
+    $("btn-reset-all-alerts").addEventListener("click", async () => {
+      if (state.alerts.length === 0) {
+        showToast("No hay alertas para eliminar.");
+        return;
+      }
+      const typed = prompt(`⚠️ ESTO BORRA LAS ${state.alerts.length} ALERTAS DE LA BASE.\nEscribí RESET para confirmar:`);
+      if (typed !== "RESET") {
+        showToast("Reset cancelado.");
+        return;
+      }
+      for (const a of state.alerts) {
+        await deleteDoc(doc(db, "alerts", a.id));
+      }
+      showToast(`☢️ Se eliminaron todas las alertas (${state.alerts.length}).`);
+    });
+
     $("btn-clean-stale-drivers").addEventListener("click", async () => {
       const now = Date.now();
       const stale = state.drivers.filter((d) => !isFreshDriver(d, now));
       for (const d of stale) {
         await deleteDoc(doc(db, "online_presence", d.id));
       }
-      showToast(`🧹 Eliminados ${stale.length} registros de presencia inactivos`);
+      showToast(`🧹 Eliminados ${stale.length} registros inactivos`);
     });
 
+    // Billing config
     $("btn-save-billing")?.addEventListener("click", async () => {
       try {
-        const alias = $("input-mp-alias").value.trim() || "vialerta.oficial.mp";
+        const alias = ($("input-mp-alias").value || "").trim() || "vialerta.oficial.mp";
+        if (alias.length < 3 || alias.length > 120) {
+          showToast("⚠️ El alias/CVU debe tener entre 3 y 120 caracteres.");
+          return;
+        }
         const price = Math.max(0, Math.min(1000000, parseInt($("input-pro-price").value, 10) || 5000));
-        const link = $("input-mp-link").value.trim();
+        const link = ($("input-mp-link").value || "").trim().slice(0, 300);
         await setDoc(doc(db, "app_config", "billing"), {
           mercadoPagoAlias: alias,
           proPriceArs: price,
@@ -1208,6 +1632,7 @@
       }
     });
 
+    // App update controls
     function isValidUpdateUrl(url) {
       const clean = (url || "").trim();
       if (!clean || clean.length > 500 || clean.includes(" ")) return false;
@@ -1220,19 +1645,46 @@
 
     function renderAppUpdateBadge(cfg) {
       const badge = $("update-status-badge");
-      if (!badge) return;
-      if (cfg && cfg.enabled) {
-        badge.className = "tag tag-green";
-        badge.textContent = `ACTIVO v${cfg.latestVersionName || cfg.latestVersionCode || ""}`;
-      } else {
-        badge.className = "tag tag-slate";
-        badge.textContent = "INACTIVO";
+      const pill = $("top-update-pill");
+      const tsEl = $("update-updated-at");
+      if (badge) {
+        if (cfg && cfg.enabled) {
+          badge.className = "tag tag-green";
+          badge.textContent = `ACTIVO v${cfg.latestVersionName || cfg.latestVersionCode || ""}`;
+        } else {
+          badge.className = "tag tag-slate";
+          badge.textContent = "INACTIVO";
+        }
+      }
+      if (pill) {
+        if (cfg && cfg.enabled) {
+          pill.textContent = `📲 Update v${cfg.latestVersionName || cfg.latestVersionCode || ""} activo`;
+          pill.classList.remove("hidden");
+        } else {
+          pill.classList.add("hidden");
+        }
+      }
+      if (tsEl) {
+        const dt = cfg?.updatedAt?.toDate ? cfg.updatedAt.toDate() : null;
+        tsEl.textContent = dt ? `Última edición: ${dt.toLocaleString("es-AR")}` : "";
       }
     }
 
     ["input-update-code", "input-update-name", "input-update-url", "input-update-message", "input-update-enabled", "input-update-mandatory"].forEach((id) => {
       $(id)?.addEventListener("input", () => { state.updateDraftDirty = true; });
       $(id)?.addEventListener("change", () => { state.updateDraftDirty = true; });
+    });
+
+    $("btn-prefill-next-update")?.addEventListener("click", () => {
+      const currentCode = Math.max(3, parseInt($("input-update-code").value, 10) || Number(state.appUpdate?.latestVersionCode) || 3);
+      const nextCode = currentCode + 1;
+      $("input-update-code").value = nextCode;
+      if (!$("input-update-name").value.trim()) {
+        $("input-update-name").value = `2.${nextCode - 1}`;
+      }
+      $("input-update-enabled").checked = true;
+      state.updateDraftDirty = true;
+      showToast(`✨ Preparado versionCode ${nextCode}. Pegá el link y tocá Publicar.`);
     });
 
     $("btn-save-app-update")?.addEventListener("click", async () => {
@@ -1267,7 +1719,7 @@
           updatedAt: serverTimestamp()
         });
         state.updateDraftDirty = false;
-        showToast(enabled ? `📲 Aviso v${name || code} publicado en app y web` : "🔕 Aviso de actualización guardado como inactivo");
+        showToast(enabled ? `📲 Aviso v${name || code} publicado en app y web` : "🔕 Aviso guardado como inactivo");
       } catch (e) {
         showToast(`⚠️ Error publicando actualización: ${e.message}`);
       }
@@ -1306,56 +1758,82 @@
       window.open(url, "_blank", "noopener,noreferrer");
     });
 
-    window.__setFeatureMode = async (key, mode) => {
-      try {
-        const nextPayload = { ...DEFAULT_FEATURES, ...state.features, [key]: mode, updatedAt: serverTimestamp() };
-        delete nextPayload.id;
-        await setDoc(doc(db, "app_config", "features"), nextPayload, { merge: true });
-        showToast(`🚀 Módulo actualizado a ${mode.toUpperCase()}`);
-      } catch (e) {
-        console.error(e);
-        showToast(`⚠️ Error al guardar módulo: ${e.message}`);
-      }
-    };
+    // Delegated table action handler (XSS-safe, unified)
+    $("dashboard-main").addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-action]");
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      const col = btn.dataset.col;
+      const arg = btn.dataset.arg;
 
-    window.__adminAction = async (action, arg1, arg2) => {
       try {
-        if (action === "resolveAlert") {
-          await updateDoc(doc(db, "alerts", arg1), { status: "resolved", updatedAt: serverTimestamp() });
+        if (action === "focusMap") {
+          focusPointOnMap(Number(btn.dataset.lat), Number(btn.dataset.lng), arg);
+        } else if (action === "resolveAlert") {
+          await updateDoc(doc(db, "alerts", id), { status: "resolved", updatedAt: serverTimestamp() });
           showToast("✅ Alerta marcada como resuelta");
+        } else if (action === "reopenAlert") {
+          await updateDoc(doc(db, "alerts", id), { status: "active", updatedAt: serverTimestamp() });
+          showToast("🔄 Alerta reactivada en el mapa");
+        } else if (action === "closeSeguime") {
+          await updateDoc(doc(db, "seguime_sessions", id), { status: "cancelled", updatedAt: serverTimestamp() });
+          showToast("🛑 Sesión Seguime cerrada");
         } else if (action === "resolveSos") {
-          await updateDoc(doc(db, "sos_requests", arg1), { status: "resolved", updatedAt: serverTimestamp() });
+          await updateDoc(doc(db, "sos_requests", id), { status: "resolved", updatedAt: serverTimestamp() });
           showToast("✅ SOS marcado como resuelto");
+        } else if (action === "approveBaulClaim") {
+          await updateDoc(doc(db, "baul_vial", id), { claimStatus: "aprobado", updatedAt: serverTimestamp() });
+          showToast("✅ Reclamo aprobado");
+        } else if (action === "rejectBaulClaim") {
+          await updateDoc(doc(db, "baul_vial", id), { claimStatus: "rechazado", updatedAt: serverTimestamp() });
+          showToast("❌ Reclamo rechazado");
         } else if (action === "markBaulReturned") {
-          await updateDoc(doc(db, "baul_vial", arg1), { status: "devuelto", updatedAt: serverTimestamp() });
-          showToast("✅ Baúl Vial marcado como devuelto");
+          await updateDoc(doc(db, "baul_vial", id), { status: "devuelto", updatedAt: serverTimestamp() });
+          showToast("🤝 Baúl Vial marcado como devuelto");
         } else if (action === "toggleBeta") {
-          await updateDoc(doc(db, "users", arg1), { isBetaTester: Boolean(arg2), updatedAt: serverTimestamp() });
-          showToast(arg2 ? "🧪 Usuario habilitado como Beta Tester" : "Acceso Beta removido al usuario");
+          const next = arg === "true";
+          await updateDoc(doc(db, "users", id), { isBetaTester: next, updatedAt: serverTimestamp() });
+          showToast(next ? "🧪 Usuario habilitado como Beta Tester" : "Acceso Beta removido");
         } else if (action === "grantPro") {
-          const days = Number(arg2);
+          const days = Number(arg);
           const expiry = days === 0 ? 0 : (Date.now() + (days || 30) * 86400000);
-          await updateDoc(doc(db, "users", arg1), { isProUser: true, proExpiresAtMillis: expiry, updatedAt: serverTimestamp() });
+          await updateDoc(doc(db, "users", id), { isProUser: true, proExpiresAtMillis: expiry, updatedAt: serverTimestamp() });
           showToast(days === 0 ? "∞ Licencia PRO Ilimitada activada" : `🌟 Licencia PRO activada por ${days} días`);
         } else if (action === "revokePro") {
-          await updateDoc(doc(db, "users", arg1), { isProUser: false, proExpiresAtMillis: Date.now() - 1000, updatedAt: serverTimestamp() });
+          await updateDoc(doc(db, "users", id), { isProUser: false, proExpiresAtMillis: Date.now() - 1000, updatedAt: serverTimestamp() });
           showToast("📱 Usuario pasado a plan Freemium");
         } else if (action === "toggleDni") {
-          await updateDoc(doc(db, "users", arg1), { isDniVerified: Boolean(arg2), updatedAt: serverTimestamp() });
-          showToast("🪪 Estado de verificación DNI actualizado");
+          const next = arg === "true";
+          await updateDoc(doc(db, "users", id), { isDniVerified: next, updatedAt: serverTimestamp() });
+          showToast(next ? "🪪 DNI verificado" : "Verificación DNI removida");
+        } else if (action === "setFeature") {
+          const nextPayload = {
+            aventonMode: state.features.aventonMode || "beta",
+            baulVialMode: state.features.baulVialMode || "beta",
+            reclamosMode: state.features.reclamosMode || "public",
+            proConversionMode: state.features.proConversionMode || "beta",
+            referralsMode: state.features.referralsMode || "public",
+            preTripChecklistMode: state.features.preTripChecklistMode || "public",
+            [id]: arg,
+            updatedAt: serverTimestamp()
+          };
+          await setDoc(doc(db, "app_config", "features"), nextPayload, { merge: true });
+          showToast(`🚀 Módulo actualizado a ${arg.toUpperCase()}`);
         } else if (action === "deleteDoc") {
-          if (!confirm(`¿Seguro que querés eliminar este registro de ${arg1}?`)) return;
-          await deleteDoc(doc(db, arg1, arg2));
+          if (!confirm(`¿Seguro que querés eliminar este registro de ${col}?`)) return;
+          await deleteDoc(doc(db, col, id));
           showToast("🗑️ Registro eliminado");
         }
-      } catch (e) {
-        console.error(e);
-        showToast(`⚠️ Error: ${e.message}`);
+      } catch (err) {
+        console.error(err);
+        showToast(`⚠️ Error: ${err.message}`);
       }
-    };
+    });
 
     function subscribeRealtime() {
       state.unsubs.forEach((u) => u());
+      if (state.tickerId) clearInterval(state.tickerId);
       const onErr = (name) => (err) => {
         console.error(`Error escuchando ${name}:`, err);
         showToast(`⚠️ Permiso/error en ${name}: ${err.message}`);
@@ -1369,6 +1847,10 @@
           state.drivers = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           renderAll();
         }, onErr("online_presence")),
+        onSnapshot(collection(db, "seguime_sessions"), (snap) => {
+          state.seguime = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          renderAll();
+        }, onErr("seguime_sessions")),
         onSnapshot(collection(db, "users"), (snap) => {
           state.users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           renderAll();
@@ -1390,6 +1872,7 @@
           const cfg = snap.exists() ? snap.data() : { enabled: false, mandatory: false, latestVersionCode: 4, latestVersionName: "", message: "", downloadUrl: "" };
           state.appUpdate = cfg;
           renderAppUpdateBadge(cfg);
+          renderMapInsights();
           if (!state.updateDraftDirty) {
             if ($("input-update-code")) $("input-update-code").value = cfg.latestVersionCode || 4;
             if ($("input-update-name")) $("input-update-name").value = cfg.latestVersionName || "";
@@ -1412,11 +1895,22 @@
           renderAll();
         }, onErr("hitchhike_requests"))
       ];
+
+      // Keep relative timestamps and online TTL status fresh every 15s
+      state.tickerId = setInterval(() => {
+        renderKpis();
+        renderDriversAndSeguime();
+        refreshMapMarkers();
+      }, 15000);
     }
 
     onAuthStateChanged(auth, async (user) => {
       state.unsubs.forEach((u) => u());
       state.unsubs = [];
+      if (state.tickerId) {
+        clearInterval(state.tickerId);
+        state.tickerId = null;
+      }
 
       if (!user) {
         $("auth-view").classList.remove("hidden");
@@ -1433,7 +1927,7 @@
       $("auth-view").classList.add("hidden");
       $("dashboard-view").classList.remove("hidden");
       $("admin-email-badge").textContent = `Sesión verificada: ${user.email}`;
-      initMap();
+      await initMap();
       subscribeRealtime();
     });
   </script>
