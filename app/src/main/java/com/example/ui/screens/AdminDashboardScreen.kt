@@ -283,7 +283,7 @@ fun AdminDashboardScreen(
                         Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Panel Maestro VíaAlerta",
+                                text = "Panel Maestro Vialerta",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
@@ -653,7 +653,7 @@ fun AdminDashboardScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "Subí la nueva APK firmada a Google Drive o GitHub Releases y pegá el link acá. Los conductores con un código de versión menor verán el cartel al abrir VíaAlerta.",
+                        text = "Subí la nueva APK firmada a Google Drive o GitHub Releases y pegá el link acá. Los conductores con un código de versión menor verán el cartel al abrir Vialerta.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.72f),
                         lineHeight = 17.sp
@@ -1690,7 +1690,7 @@ fun AdminDashboardScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "Precio mensual sugerido para VíaAlerta PRO (ARS):",
+                        text = "Precio mensual sugerido para Vialerta PRO (ARS):",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.8f)
                     )

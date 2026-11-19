@@ -453,7 +453,7 @@ fun ReclamosScreen(
                             ) {
                                 Button(
                                     onClick = {
-                                        val shareText = "📄 *CONSTANCIA DE RECLAMO VIAL (VíaAlerta)*\n" +
+                                        val shareText = "📄 *CONSTANCIA DE RECLAMO VIAL (Vialerta)*\n" +
                                                 "Ticket: ${ticket.ticketNumber}\n" +
                                                 "Organismo: ${ticket.entity}\n" +
                                                 "Lugar: ${ticket.routeKm}\n" +

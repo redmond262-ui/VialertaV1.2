@@ -84,11 +84,11 @@ fun ProConversionDialog(
         )
         is ProConversionTrigger.HazardMilestone -> Pair(
             "¡${trigger.totalAvoided} Peligros Evitados!",
-            "Ya superaste los ${trigger.totalAvoided} avisos preventivos en ruta con VíaAlerta. Activá PRO para conservar el radar inteligente y alertas exactas."
+            "Ya superaste los ${trigger.totalAvoided} avisos preventivos en ruta con Vialerta. Activá PRO para conservar el radar inteligente y alertas exactas."
         )
         is ProConversionTrigger.TrialEnding24h -> Pair(
             "Tu prueba PRO vence en ~${trigger.hoursRemaining} hs",
-            "Pasate a VíaAlerta PRO o canjeá Puntos Ruta e invitaciones gratis antes de volver al modo básico."
+            "Pasate a Vialerta PRO o canjeá Puntos Ruta e invitaciones gratis antes de volver al modo básico."
         )
     }
 
@@ -131,7 +131,7 @@ fun ProConversionDialog(
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "VíaAlerta PRO • $formattedPrice ARS/mes",
+                            text = "Vialerta PRO • $formattedPrice ARS/mes",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Black,
                             color = Amber400
@@ -173,7 +173,7 @@ fun ProConversionDialog(
                                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                                     cm?.setPrimaryClip(
                                         ClipData.newPlainText(
-                                            "Alias VíaAlerta",
+                                            "Alias Vialerta",
                                             billingConfig.mercadoPagoAlias.ifBlank { "vialerta.oficial.mp" }
                                         )
                                     )

@@ -76,6 +76,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -234,6 +235,7 @@ fun MapScreen(
     var isRouteCardCollapsed by remember { mutableStateOf(false) }
     var isFetchingRoutes by remember { mutableStateOf(false) }
     var fitRouteTrigger by remember { mutableIntStateOf(0) }
+    var suppressNextFitRoute by remember { mutableStateOf(false) }
     var recalcTrigger by remember { mutableIntStateOf(0) }
     var offRouteSinceMillis by remember { mutableLongStateOf(0L) }
     var lastNetworkRecalcMillis by remember { mutableLongStateOf(0L) }
@@ -481,6 +483,39 @@ fun MapScreen(
         }
     }
 
+    val latestIsPro by rememberUpdatedState(isProEffective)
+    val latestSelectedDest by rememberUpdatedState(selectedDestination)
+    val latestDriverLoc by rememberUpdatedState(driverLocation)
+    val pendingHolderDest by ViaAlertaRadarHolder.pendingVoiceDestination.collectAsState()
+
+    fun applyBackgroundVoiceDestination(
+        title: String,
+        subtitle: String,
+        latitude: Double,
+        longitude: Double
+    ) {
+        suppressNextFitRoute = true
+        selectedRouteIndex = 0
+        hasNetworkRoute = false
+        hasSearchedQuery = false
+        isRouteOverviewMode = false
+        isRouteCardCollapsed = true
+        selectedDestination = SearchLocationResult(
+            title = title,
+            subtitle = subtitle,
+            latitude = latitude,
+            longitude = longitude
+        )
+        searchQuery = title
+        searchSuggestions = emptyList()
+    }
+
+    LaunchedEffect(pendingHolderDest) {
+        val pending = pendingHolderDest ?: return@LaunchedEffect
+        applyBackgroundVoiceDestination(pending.title, pending.subtitle, pending.latitude, pending.longitude)
+        ViaAlertaRadarHolder.pendingVoiceDestination.value = null
+    }
+
     DisposableEffect(voiceCopilotManager) {
         ViaAlertaRadarHolder.ensureDefaultCallbacks(context)
         ViaAlertaRadarHolder.onStopTripRequested = {
@@ -504,9 +539,73 @@ fun MapScreen(
                 true
             } else false
         }
+        voiceCopilotManager.onConfirmChangeDestinationDecision = { title, subtitle, lat, lon ->
+            applyBackgroundVoiceDestination(title, subtitle, lat, lon)
+        }
+        voiceCopilotManager.onNavigateToPlaceQuery = { placeQuery ->
+            if (!latestIsPro) {
+                com.example.util.VoiceDestinationResult.ErrorOrLocked(
+                    speech = "La búsqueda de destinos por voz en marcha es exclusiva de Vialerta PRO. Podés activar tu prueba o canjear puntos en tu perfil.",
+                    status = "🔒 Búsqueda de ruta por voz: Vialerta PRO"
+                )
+            } else {
+                val loc = latestDriverLoc
+                val searchRes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val places = RoadRoutingManager.searchPlaces(
+                        query = placeQuery,
+                        context = context,
+                        biasLat = loc.latitude,
+                        biasLon = loc.longitude
+                    )
+                    val target = places.firstOrNull() ?: return@withContext null
+                    val details = RoadRoutingManager.getActualRouteDetails(
+                        loc.latitude, loc.longitude, target.latitude, target.longitude
+                    )
+                    Triple(target, details.distanceMeters, details.durationSeconds)
+                }
+                if (searchRes == null) {
+                    com.example.util.VoiceDestinationResult.ErrorOrLocked(
+                        speech = "No encontré la localidad $placeQuery en el mapa.",
+                        status = "Sin resultados para $placeQuery"
+                    )
+                } else {
+                    val (target, distMeters, durSeconds) = searchRes
+                    val distLabel = LocationRadarManager.formatDisplayDistance(distMeters)
+                    val (_, durationLabel) = RoadRoutingManager.calculateFormattedETA(durSeconds)
+                    val placeTitle = target.title.ifBlank { placeQuery }
+                    val existingDest = latestSelectedDest
+                    if (existingDest != null && !existingDest.title.equals(placeTitle, ignoreCase = true)) {
+                        com.example.util.VoiceDestinationResult.AskConfirmReplace(
+                            questionSpeech = "Ya tenés un destino activo hacia ${existingDest.title}. $placeTitle queda a $distLabel, aproximadamente $durationLabel. ¿Querés cambiar el destino a $placeTitle?",
+                            prompt = com.example.util.PendingVoicePrompt.ConfirmChangeDestination(
+                                title = placeTitle,
+                                subtitle = target.subtitle,
+                                latitude = target.latitude,
+                                longitude = target.longitude
+                            ),
+                            status = "🎯 $placeTitle: $distLabel ($durationLabel) — ¿Cambiar?"
+                        )
+                    } else {
+                        applyBackgroundVoiceDestination(
+                            title = placeTitle,
+                            subtitle = target.subtitle,
+                            latitude = target.latitude,
+                            longitude = target.longitude
+                        )
+                        com.example.util.VoiceDestinationResult.Applied(
+                            speech = "$placeTitle queda a $distLabel, aproximadamente $durationLabel. Ya lo cargué en el mapa sin borrar tus alertas.",
+                            status = "🎯 $placeTitle ($distLabel • $durationLabel)"
+                        )
+                    }
+                }
+            }
+        }
         onDispose {
             ViaAlertaRadarHolder.onStopTripRequested = null
             ViaAlertaRadarHolder.onRecalculateTripRequested = null
+            voiceCopilotManager.onNavigateToPlaceQuery = null
+            voiceCopilotManager.onConfirmChangeDestinationDecision = null
+            ViaAlertaRadarHolder.ensureDefaultCallbacks(context)
         }
     }
 
@@ -658,9 +757,10 @@ fun MapScreen(
             baseRouteDurationSeconds = chosen.durationSeconds
             destinationRoadDistanceMeters = chosen.distanceMeters
             destinationDurationSeconds = chosen.durationSeconds
-            if (!isRouteActive) {
+            if (!isRouteActive && !suppressNextFitRoute) {
                 fitRouteTrigger++
             }
+            suppressNextFitRoute = false
         }
     }
 
@@ -998,8 +1098,8 @@ fun MapScreen(
                                 )
                                 Text(
                                     text = activeFollowedSession?.destinationTitle?.takeIf { it.isNotBlank() }
-                                        ?.let { "🎯 Hacia $it • Dentro de VíaAlerta" }
-                                        ?: "Ubicación en tiempo real dentro de VíaAlerta",
+                                        ?.let { "🎯 Hacia $it • Dentro de Vialerta" }
+                                        ?: "Ubicación en tiempo real dentro de Vialerta",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White.copy(alpha = 0.78f),
                                     maxLines = 1,
@@ -1920,32 +2020,6 @@ fun MapScreen(
                             color = if (activeSeguimeSessionId != null) SafetyGreen500 else Color.White,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                Surface(
-                    color = if (isVoiceListening) Amber500 else Slate900.copy(alpha = 0.94f),
-                    shape = CircleShape,
-                    border = BorderStroke(2.dp, if (isVoiceListening) Color.White else Amber400),
-                    shadowElevation = 8.dp,
-                    modifier = Modifier
-                        .size(58.dp)
-                        .clickable {
-                            if (isVoiceListening) {
-                                voiceCopilotManager.stopListening()
-                            } else {
-                                onRequestVoiceListening()
-                            }
-                        }
-                        .testTag("map_direct_mic_btn")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isVoiceListening) Icons.Default.Mic else Icons.Default.MicOff,
-                            contentDescription = "Reportar por Voz sin salir del mapa",
-                            tint = if (isVoiceListening) Color.Black else Amber400,
-                            modifier = Modifier.size(28.dp)
                         )
                     }
                 }

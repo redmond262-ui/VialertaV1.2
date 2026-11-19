@@ -15,6 +15,8 @@ object DriverPreferences {
     private const val KEY_SPEED_OFFSET_KMH = "speed_calibration_kmh"
     private const val KEY_HANDS_FREE_LOOP = "hands_free_voice_loop"
     private const val KEY_AUTO_HANDS_FREE_TRIP = "auto_hands_free_on_trip"
+    private const val KEY_VOICE_WAKE_WORD = "voice_wake_word"
+    private const val KEY_WAKE_WORD_REQUIRED_HF = "voice_wake_word_required_hf"
     private const val KEY_SHAKE_DETECTOR = "pothole_shake_detector"
     private const val KEY_BLUETOOTH_MEDIA_VOICE = "bluetooth_media_voice"
     private const val KEY_NIGHT_MODE = "night_mode_pref" // AUTO | ON | OFF
@@ -47,6 +49,7 @@ object DriverPreferences {
     // App update prompt dismissal tracking
     private const val KEY_DISMISSED_UPDATE_VERSION_CODE = "dismissed_update_version_code"
 
+    const val DEFAULT_VOICE_WAKE_WORD = "Copiloto"
     const val VEHICLE_AUTO = "AUTO"
     const val VEHICLE_MOTO = "MOTO"
     const val VEHICLE_CAMION = "CAMION"
@@ -107,6 +110,36 @@ object DriverPreferences {
     fun setAutoHandsFreeOnTripEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_AUTO_HANDS_FREE_TRIP, enabled).apply()
+    }
+
+    fun sanitizeWakeWord(raw: String): String {
+        val cleaned = raw.trim().replace(Regex("\\s+"), " ").take(24).trim()
+        val alnumCount = cleaned.count { it.isLetterOrDigit() }
+        return if (alnumCount >= 2) cleaned else DEFAULT_VOICE_WAKE_WORD
+    }
+
+    fun getVoiceWakeWord(context: Context): String {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_VOICE_WAKE_WORD, DEFAULT_VOICE_WAKE_WORD)
+            ?: DEFAULT_VOICE_WAKE_WORD
+        return sanitizeWakeWord(raw)
+    }
+
+    fun setVoiceWakeWord(context: Context, word: String): String {
+        val clean = sanitizeWakeWord(word)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_VOICE_WAKE_WORD, clean).apply()
+        return clean
+    }
+
+    fun isWakeWordRequiredInHandsFree(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_WAKE_WORD_REQUIRED_HF, true)
+    }
+
+    fun setWakeWordRequiredInHandsFree(context: Context, required: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_WAKE_WORD_REQUIRED_HF, required).apply()
     }
 
     fun isShakeDetectorEnabled(context: Context): Boolean {

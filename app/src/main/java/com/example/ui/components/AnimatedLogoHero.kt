@@ -197,7 +197,7 @@ fun AnimatedLogoHero(
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.vialerta_official_logo),
-                    contentDescription = "VíaAlerta - Avisá. Cuidá. Conducí mejor.",
+                    contentDescription = "Vialerta - Avisá. Cuidá. Conducí mejor.",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()

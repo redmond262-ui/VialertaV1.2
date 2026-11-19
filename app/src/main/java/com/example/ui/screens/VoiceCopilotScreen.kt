@@ -30,24 +30,33 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -111,9 +120,18 @@ fun VoiceCopilotScreen(
     val lastRecognized by voiceCopilotManager.lastRecognizedText.collectAsState()
     val driverLoc by locationRadarManager.currentLocation.collectAsState()
     val autoHandsFreeOnTripState = remember {
-        androidx.compose.runtime.mutableStateOf(
+        mutableStateOf(
             com.example.util.DriverPreferences.isAutoHandsFreeOnTripEnabled(context)
         )
+    }
+    var wakeWordRequired by remember {
+        mutableStateOf(com.example.util.DriverPreferences.isWakeWordRequiredInHandsFree(context))
+    }
+    var savedWakeWord by remember {
+        mutableStateOf(com.example.util.DriverPreferences.getVoiceWakeWord(context))
+    }
+    var wakeWordDraft by remember {
+        mutableStateOf(savedWakeWord)
     }
 
     val recentVoiceReports = remember { mutableStateListOf<String>() }
@@ -421,10 +439,184 @@ fun VoiceCopilotScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Customizable Wake Word Card for Hands-Free mode
+            Surface(
+                color = Slate900,
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (wakeWordRequired) Amber400.copy(alpha = 0.55f) else Slate800
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("copilot_wake_word_card")
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = "🗣️ Palabra de Activación",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Amber400
+                            )
+                            Text(
+                                text = if (wakeWordRequired) {
+                                    "En Manos Libres respondemos solo si decís \"$savedWakeWord\" primero"
+                                } else {
+                                    "Desactivado: escucha cualquier frase directamente en Manos Libres"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.68f)
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = wakeWordRequired,
+                            onCheckedChange = { required ->
+                                wakeWordRequired = required
+                                com.example.util.DriverPreferences.setWakeWordRequiredInHandsFree(context, required)
+                                voiceCopilotManager.refreshHandsFreeStatusMessage()
+                            },
+                            modifier = Modifier.testTag("copilot_wake_word_switch")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = wakeWordDraft,
+                        onValueChange = { if (it.length <= 24) wakeWordDraft = it },
+                        singleLine = true,
+                        label = { Text("Nombre del Copiloto (ej: Copiloto, Vialerta)") },
+                        placeholder = { Text(com.example.util.DriverPreferences.DEFAULT_VOICE_WAKE_WORD) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Amber400,
+                            unfocusedBorderColor = Slate700,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedLabelColor = Amber400,
+                            unfocusedLabelColor = Color.White.copy(alpha = 0.65f),
+                            cursorColor = Amber400
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("copilot_wake_word_input")
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Quick wake-word presets
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("Copiloto", "Vialerta", "Ruta").forEach { preset ->
+                            val isSelectedPreset = savedWakeWord.equals(preset, ignoreCase = true)
+                            Surface(
+                                color = if (isSelectedPreset) Amber500.copy(alpha = 0.22f) else Slate800,
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelectedPreset) Amber400 else Slate700
+                                ),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .clickable {
+                                        val clean = com.example.util.DriverPreferences.setVoiceWakeWord(context, preset)
+                                        savedWakeWord = clean
+                                        wakeWordDraft = clean
+                                        voiceCopilotManager.refreshHandsFreeStatusMessage()
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar("Palabra de activación: \"$clean\"")
+                                        }
+                                    }
+                                    .testTag("copilot_wake_preset_${preset.lowercase()}")
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = preset,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelectedPreset) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelectedPreset) Amber400 else Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val clean = com.example.util.DriverPreferences.setVoiceWakeWord(context, wakeWordDraft)
+                                savedWakeWord = clean
+                                wakeWordDraft = clean
+                                voiceCopilotManager.refreshHandsFreeStatusMessage()
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("✅ Nombre del copiloto guardado: \"$clean\"")
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Amber500,
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("copilot_wake_word_save_btn")
+                        ) {
+                            Text("Guardar Nombre", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val def = com.example.util.DriverPreferences.setVoiceWakeWord(
+                                    context,
+                                    com.example.util.DriverPreferences.DEFAULT_VOICE_WAKE_WORD
+                                )
+                                savedWakeWord = def
+                                wakeWordDraft = def
+                                voiceCopilotManager.refreshHandsFreeStatusMessage()
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Restaurado a \"$def\"")
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Slate700),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(alpha = 0.85f)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("copilot_wake_word_reset_btn")
+                        ) {
+                            Text("Por defecto", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             androidx.compose.material3.OutlinedButton(
                 onClick = { voiceCopilotManager.testCopilotAudio() },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .testTag("copilot_test_audio_btn"),
                 shape = RoundedCornerShape(12.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, RouteBlue500.copy(alpha = 0.65f)),
@@ -445,16 +637,26 @@ fun VoiceCopilotScreen(
                 color = Amber400,
                 modifier = Modifier.align(Alignment.Start)
             )
+            if (wakeWordRequired) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Con Manos Libres activo, decí «$savedWakeWord» antes de tu comando (ej: «$savedWakeWord llévame a Rosario»).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SafetyGreen500,
+                    modifier = Modifier.align(Alignment.Start)
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
 
             val commands = listOf(
+                Pair("Llévame a [ciudad] (PRO)", "Busca localidad y carga ruta en segundo plano sin sacarte del mapa ni borrar alertas"),
                 Pair("¿Cuánto falta?", "Informa por voz distancia y tiempo restante al destino"),
                 Pair("¿A cuánto queda [ciudad]?", "Calcula distancia en ruta a cualquier localidad (ej. Rosario)"),
                 Pair("¿Dónde estoy?", "Lee tu ruta, kilómetro estimado y velocidad actual"),
                 Pair("¿Hay peligros adelante?", "Resume alertas activas en los próximos 15 km"),
                 Pair("Estación de servicio cercana", "Busca estaciones de combustible / GNC cercanas adelante"),
                 Pair("Recalcular ruta / Detener viaje", "Recalcula alternativas o detiene la navegación activa"),
-                Pair("Ok / Confirmo / Sí", "Confirma alertas pendientes o golpes detectados"),
+                Pair("Ok / Confirmo / Sí", "Confirma alertas pendientes, cambio de destino o golpes detectados"),
                 Pair("No / Ya no está / Cancelar", "Descarta o anula una alerta reciente"),
                 Pair("Encender manos libres", "Activa el micrófono continuo manos libres"),
                 Pair("Apagar manos libres", "Detiene la escucha continua silenciosa"),
@@ -475,6 +677,20 @@ fun VoiceCopilotScreen(
                             .fillMaxWidth()
                             .clickable {
                                 coroutineScope.launch {
+                                    if (cmd.contains("Llévame a", ignoreCase = true)) {
+                                        voiceCopilotManager.speak(
+                                            "Con Vialerta PRO podés decir: $savedWakeWord llévame a Rosario, o buscar ciudad Córdoba, sin salir del mapa.",
+                                            isWarning = false
+                                        )
+                                        return@launch
+                                    }
+                                    if (cmd.contains("Ok / Confirmo") || cmd.contains("No / Ya no está")) {
+                                        voiceCopilotManager.speak(
+                                            "Estos comandos responden sí o no automáticamente cuando el copiloto te hace una pregunta.",
+                                            isWarning = false
+                                        )
+                                        return@launch
+                                    }
                                     if (cmd.contains("Cuánto falta")) {
                                         val msg = voiceCopilotManager.onRemainingDistanceQuery?.invoke()
                                             ?: "No tenés un destino activo en el mapa en este momento."

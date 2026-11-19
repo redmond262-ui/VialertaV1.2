@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>VíaAlerta • Seguime en Tiempo Real</title>
+  <title>Vialerta • Seguime en Tiempo Real</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
@@ -220,7 +220,7 @@
       <div class="brand-icon">VA</div>
       <div style="min-width:0;">
         <div style="font-weight:900;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          Seguime en Vivo • VíaAlerta
+          Seguime en Vivo • Vialerta
         </div>
         <div id="header-sub" style="font-size:11px;color:var(--muted);">Conectando con enlace privado...</div>
       </div>
@@ -239,9 +239,9 @@
         <div id="overlay-emoji" style="font-size:38px;">🛰️</div>
         <h2 id="overlay-title" style="margin:10px 0 6px;font-size:19px;">Abriendo recorrido en vivo...</h2>
         <p id="overlay-desc" style="margin:0 0 14px;color:var(--muted);font-size:13px;line-height:1.45;">
-          Verificando el enlace temporal privado compartido desde VíaAlerta.
+          Verificando el enlace temporal privado compartido desde Vialerta.
         </p>
-        <a href="/index.html" class="btn btn-amber" style="display:inline-flex;">📱 Conocer VíaAlerta</a>
+        <a href="/index.html" class="btn btn-amber" style="display:inline-flex;">📱 Conocer Vialerta</a>
       </div>
     </div>
   </div>
@@ -273,7 +273,7 @@
     <div class="actions-row">
       <button id="btn-recenter" type="button" class="btn btn-amber">🎯 Ubicar vehículo en el mapa</button>
       <button id="btn-fit-trail" type="button" class="btn btn-ghost">🛣️ Ver recorrido</button>
-      <a id="btn-open-app" href="#" class="btn btn-app hidden">📲 Abrir seguimiento dentro de la app VíaAlerta</a>
+      <a id="btn-open-app" href="#" class="btn btn-app hidden">📲 Abrir seguimiento dentro de la app Vialerta</a>
     </div>
   </section>
 
@@ -460,7 +460,7 @@
         badge.className = "status-pill status-arrived";
         badge.textContent = "✅ ¡Llegó bien!";
         $("header-sub").textContent = "Viaje finalizado";
-        $("driver-title").textContent = data.driverName || "Conductor VíaAlerta";
+        $("driver-title").textContent = data.driverName || "Conductor Vialerta";
         wipePrivacyState();
         showOverlay(
           "🏁",
@@ -474,7 +474,7 @@
         badge.className = "status-pill status-error";
         badge.textContent = isExpired && data.status === "active" ? "⌛ Caducado" : "⛔ Enlace cerrado";
         $("header-sub").textContent = "Seguimiento finalizado";
-        $("driver-title").textContent = data.driverName || "Conductor VíaAlerta";
+        $("driver-title").textContent = data.driverName || "Conductor Vialerta";
         wipePrivacyState();
         showOverlay(
           "🔒",
@@ -501,7 +501,7 @@
       }
 
       $("header-sub").textContent = data.originName ? `Desde ${data.originName}` : "Transmisión GPS privada";
-      $("driver-title").textContent = data.driverName || "Conductor VíaAlerta";
+      $("driver-title").textContent = data.driverName || "Conductor Vialerta";
       $("vehicle-sub").textContent = data.vehicleSummary || "Vehículo en recorrido";
       $("dest-pill").textContent = data.destinationTitle ? `🎯 Destino: ${data.destinationTitle}` : "🛣️ Recorrido libre";
 
@@ -601,7 +601,7 @@
       showOverlay(
         "🔗",
         "Enlace de Seguime incompleto",
-        "Pedile al conductor que te reenvíe el link completo de VíaAlerta por WhatsApp."
+        "Pedile al conductor que te reenvíe el link completo de Vialerta por WhatsApp."
       );
     } else {
       const ref = doc(db, "seguime_sessions", sessionId);

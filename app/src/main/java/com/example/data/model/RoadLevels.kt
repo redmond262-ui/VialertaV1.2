@@ -129,7 +129,7 @@ object RoadLevels {
         includeReferral: Boolean = true
     ): String {
         val spec = forXp(xpTotal)
-        val cleanName = driverName.ifBlank { "Conductor VíaAlerta" }
+        val cleanName = driverName.ifBlank { "Conductor Vialerta" }
         val helpedDrivers = confirmedHelps.coerceAtLeast(alertsCreated)
         val referralBlock = if (includeReferral && !referralCode.isNullOrBlank()) {
             "\n🎁 Usá mi código *$referralCode* y sumá +150 pts/XP + 7 días PRO gratis."
@@ -137,7 +137,7 @@ object RoadLevels {
             ""
         }
         return """
-            ${spec.badge} *Pionero de Ruta — VíaAlerta Argentina*
+            ${spec.badge} *Pionero de Ruta — Vialerta Argentina*
             
             Soy *$cleanName* • Nivel ${spec.level}: *${spec.title}* ($xpTotal XP)
             🛣️ Alertas reportadas en ruta: *$alertsCreated*

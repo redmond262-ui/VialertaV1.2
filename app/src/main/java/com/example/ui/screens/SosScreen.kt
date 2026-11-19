@@ -275,7 +275,7 @@ fun SosScreen(
                             }
                         },
                         onShareWhatsApp = {
-                            val text = "🚨 *PEDIDO DE AUXILIO VERIFICADO (VíaAlerta)*\n" +
+                            val text = "🚨 *PEDIDO DE AUXILIO VERIFICADO (Vialerta)*\n" +
                                     "👤 Titular: ${userActiveSos.ownerName} (DNI ${userActiveSos.ownerDni} - VERIFICADO)\n" +
                                     "🚗 Vehículo: ${userActiveSos.vehicleModel} ${userActiveSos.vehicleColor}\n" +
                                     "🔢 Patente: ${userActiveSos.licensePlate}\n" +
@@ -552,7 +552,7 @@ fun SosScreen(
                                 driverLat = driverLoc.latitude,
                                 driverLng = driverLoc.longitude,
                                 onHelpWhatsApp = {
-                                    val text = "Hola ${sos.ownerName}, vi tu pedido de auxilio por ${sos.assistanceType} en VíaAlerta sobre ${sos.routeDescription}. ¿Seguís necesitando ayuda?"
+                                    val text = "Hola ${sos.ownerName}, vi tu pedido de auxilio por ${sos.assistanceType} en Vialerta sobre ${sos.routeDescription}. ¿Seguís necesitando ayuda?"
                                     shareViaWhatsApp(context, text)
                                 },
                                 onDeleteSos = {

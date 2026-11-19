@@ -183,7 +183,7 @@ fun ProfileScreen(
 
                     Column {
                         Text(
-                            text = name.ifBlank { "Conductor VíaAlerta" },
+                            text = name.ifBlank { "Conductor Vialerta" },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -418,7 +418,7 @@ fun ProfileScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (isProActive) "VíaAlerta PRO Activo" else "Modo Freemium",
+                                    text = if (isProActive) "Vialerta PRO Activo" else "Modo Freemium",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Black,
                                     color = if (isProActive) Amber400 else Color.White,
@@ -924,7 +924,7 @@ fun ProfileScreen(
                     Button(
                         onClick = {
                             val shareText = RoadLevels.buildPioneerShareText(
-                                driverName = name.ifBlank { userProfile?.name ?: "Conductor VíaAlerta" },
+                                driverName = name.ifBlank { userProfile?.name ?: "Conductor Vialerta" },
                                 xpTotal = userXpTotal,
                                 alertsCreated = createdAlerts,
                                 confirmedHelps = confirmedImpacts,
@@ -1033,7 +1033,7 @@ fun ProfileScreen(
                                 OutlinedButton(
                                     onClick = {
                                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                        cm?.setPrimaryClip(ClipData.newPlainText("Código VíaAlerta", myReferralCode))
+                                        cm?.setPrimaryClip(ClipData.newPlainText("Código Vialerta", myReferralCode))
                                         coroutineScope.launch {
                                             snackbarHostState.showSnackbar("📋 Código $myReferralCode copiado")
                                         }
@@ -1049,7 +1049,7 @@ fun ProfileScreen(
                                 Button(
                                     onClick = {
                                         val inviteMsg = """
-                                            🚗 *Te invito a VíaAlerta — Radar Vial Comunitario*
+                                            🚗 *Te invito a Vialerta — Radar Vial Comunitario*
                                             
                                             Avisos por voz de baches críticos, calzada rota, obras, niebla y radares viales sin controles policiales.
                                             
@@ -1774,7 +1774,7 @@ fun ProfileScreen(
                                 ""
                             }
                             val viralText = """
-                                🚗 *Sumate a VíaAlerta - Red Comunitaria de Rutas Argentinas*
+                                🚗 *Sumate a Vialerta - Red Comunitaria de Rutas Argentinas*
                                 
                                 Avisos por voz automáticos y en tiempo real de:
                                 🕳️ Pozos y baches profundos con aviso de rotura
@@ -1793,7 +1793,7 @@ fun ProfileScreen(
                     ) {
                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Compartir VíaAlerta en WhatsApp", fontWeight = FontWeight.Bold)
+                        Text("Compartir Vialerta en WhatsApp", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1826,13 +1826,13 @@ fun ProfileScreen(
                 ) {
                     androidx.compose.foundation.Image(
                         painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vialerta_official_logo),
-                        contentDescription = "VíaAlerta Logo",
+                        contentDescription = "Vialerta Logo",
                         modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp))
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
                         Text(
-                            text = "VíaAlerta v2.1",
+                            text = "Vialerta v2.2",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -1909,7 +1909,7 @@ fun ProfileScreen(
                                     val res = userRepository.redeemPointsForPro(currentUserId, 300, 3)
                                     if (res.isSuccess) {
                                         val spent = res.getOrDefault(cost3)
-                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 3 días de VíaAlerta PRO.")
+                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 3 días de Vialerta PRO.")
                                     } else {
                                         snackbarHostState.showSnackbar("Puntos insuficientes (necesitás $cost3 pts).")
                                     }
@@ -1935,7 +1935,7 @@ fun ProfileScreen(
                                     val res = userRepository.redeemPointsForPro(currentUserId, 600, 7)
                                     if (res.isSuccess) {
                                         val spent = res.getOrDefault(cost7)
-                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 7 días de VíaAlerta PRO.")
+                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 7 días de Vialerta PRO.")
                                     } else {
                                         snackbarHostState.showSnackbar("Puntos insuficientes (necesitás $cost7 pts).")
                                     }
@@ -1961,7 +1961,7 @@ fun ProfileScreen(
                                     val res = userRepository.redeemPointsForPro(currentUserId, 1200, 15)
                                     if (res.isSuccess) {
                                         val spent = res.getOrDefault(cost15)
-                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 15 días de VíaAlerta PRO.")
+                                        snackbarHostState.showSnackbar("🎉 ¡Canje exitoso (-$spent pts)! Tenés 15 días de Vialerta PRO.")
                                     } else {
                                         snackbarHostState.showSnackbar("Puntos insuficientes (necesitás $cost15 pts).")
                                     }

@@ -345,7 +345,7 @@ fun AppContent(
             MainScaffold(
                 currentUserId = activeUser?.uid ?: "guest_user",
                 currentUserName = activeUser?.displayName?.ifBlank { null }
-                    ?: if (activeUser == null) "Invitado" else "Conductor VíaAlerta",
+                    ?: if (activeUser == null) "Invitado" else "Conductor Vialerta",
                 isGuestMode = activeUser == null,
                 voiceCopilotManager = voiceCopilotManager,
                 locationRadarManager = locationRadarManager,
@@ -510,7 +510,7 @@ fun MainScaffold(
                         hitchhikeRepo.clearAllHitchhikes()
                         prefs.edit().putBoolean("clean_demo_purged_v4", true).apply()
                     } catch (t: Throwable) {
-                        android.util.Log.w("VíaAlerta", "Auto clean demo data: ${t.message}")
+                        android.util.Log.w("Vialerta", "Auto clean demo data: ${t.message}")
                     }
                 }
             }
@@ -808,9 +808,6 @@ fun MainScaffold(
                     userName = if (isGuestMode) "Invitado" else (userProfile?.name?.ifBlank { null } ?: currentUserName),
                     estimatedKm = driverLoc.estimatedKm,
                     isAdmin = isOwnerOrAdmin,
-                    onVoiceClicked = {
-                        triggerVoiceWithPermission(stayOnCurrentTab = false)
-                    },
                     onProfileClicked = {
                         if (isGuestMode) {
                             onRequestGoogleLogin()
@@ -853,7 +850,7 @@ fun MainScaffold(
                         4 -> "Reclamos Oficiales"
                         5 -> "Auxilio SOS Mecánico"
                         8 -> "Baúl Vial"
-                        else -> "Cuenta VíaAlerta"
+                        else -> "Cuenta Vialerta"
                     },
                     onSignInWithGoogle = onRequestGoogleLogin,
                     onBackToMap = { selectedTabIndex = 0 }
@@ -1014,7 +1011,7 @@ fun MainScaffold(
                         }
                         Text(
                             text = appUpdateConfig.message.ifBlank {
-                                "Hay una nueva versión de VíaAlerta lista para descargar e instalar con mejoras y correcciones."
+                                "Hay una nueva versión de Vialerta lista para descargar e instalar con mejoras y correcciones."
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.White

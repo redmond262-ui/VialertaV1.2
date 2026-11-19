@@ -260,9 +260,9 @@ class RoadRadarForegroundService : Service() {
         )
 
         val title = if (seguimeActive) {
-            "VíaAlerta: Copiloto + 📍 Seguime en Vivo ACTIVO"
+            "Vialerta: Copiloto + 📍 Seguime en Vivo ACTIVO"
         } else {
-            "VíaAlerta: Copiloto en Ruta Activo"
+            "Vialerta: Copiloto en Ruta Activo"
         }
         val text = if (seguimeActive) {
             "Compartiendo ubicación temporal de este viaje. Tocá «Detener Copiloto» para cerrar el enlace."
@@ -290,7 +290,7 @@ class RoadRadarForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "VíaAlerta - Radar en Ruta",
+                "Vialerta - Radar en Ruta",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Mantiene las alertas de pozos y el copiloto activos con la pantalla apagada o en otras apps"

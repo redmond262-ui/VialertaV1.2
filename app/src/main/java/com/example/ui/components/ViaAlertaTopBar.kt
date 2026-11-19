@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,7 +50,6 @@ fun ViaAlertaTopBar(
     userName: String?,
     estimatedKm: Int = 0,
     isAdmin: Boolean = false,
-    onVoiceClicked: () -> Unit,
     onProfileClicked: () -> Unit,
     onAdminClicked: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -71,7 +69,7 @@ fun ViaAlertaTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Left: Logo Icon + "VíaAlerta" + Location/Alerts Count
+            // Left: Logo Icon + "Vialerta" + Location/Alerts Count
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
@@ -94,7 +92,7 @@ fun ViaAlertaTopBar(
                 Spacer(modifier = Modifier.width(6.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "VíaAlerta",
+                        text = "Vialerta",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Black,
                         color = Color.White,
@@ -119,40 +117,11 @@ fun ViaAlertaTopBar(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Right: [🎙️ Voz] [Admin] [👤 Conectar / Perfil]
+            // Right: [Admin] [👤 Conectar / Perfil]
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                // 1: [🎙️ Voz] Yellow button
-                Surface(
-                    color = Slate900,
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Amber400),
-                    modifier = Modifier
-                        .clickable { onVoiceClicked() }
-                        .testTag("topbar_voice_btn")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = null,
-                            tint = Amber400,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = "Voz",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Amber400,
-                            maxLines = 1
-                        )
-                    }
-                }
                 // Admin Button (Only visible for Owner/Admin)
                 if (isAdmin && onAdminClicked != null) {
                     Surface(

@@ -309,7 +309,7 @@ fun HazardDetailBottomSheet(
                 Button(
                     onClick = {
                         val shareMessage = buildString {
-                            append("🚨 *Alerta VíaAlerta:* $title en ${alert.roadName.ifBlank { "la ruta" }}.\n")
+                            append("🚨 *Alerta Vialerta:* $title en ${alert.roadName.ifBlank { "la ruta" }}.\n")
                             if (alert.depthCm >= 15) {
                                 append("⚠️ Pozo profundo de ${alert.depthCm} cm - Riesgo de rotura.\n")
                             }
@@ -317,7 +317,7 @@ fun HazardDetailBottomSheet(
                                 append("Sentido: ${alert.directionDesc}\n")
                             }
                             append("📍 Ver ubicación GPS: https://maps.google.com/?q=${alert.latitude},${alert.longitude}\n\n")
-                            append("📲 Descargá la app comunitaria VíaAlerta y sumá tus alertas en ruta: https://gen-lang-client-0699193083.web.app")
+                            append("📲 Descargá la app comunitaria Vialerta y sumá tus alertas en ruta: https://gen-lang-client-0699193083.web.app")
                         }
                         shareViaWhatsApp(context = context, text = shareMessage)
                     },

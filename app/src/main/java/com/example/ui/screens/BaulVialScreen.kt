@@ -349,7 +349,7 @@ fun BaulVialScreen(
                                 openWhatsAppPhone(
                                     context,
                                     phone,
-                                    "Hola! Te escribo desde Baúl Vial de VíaAlerta por: ${item.title} (${item.roadName})."
+                                    "Hola! Te escribo desde Baúl Vial de Vialerta por: ${item.title} (${item.roadName})."
                                 )
                             }
                         )

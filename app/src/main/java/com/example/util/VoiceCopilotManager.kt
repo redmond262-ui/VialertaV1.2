@@ -38,6 +38,22 @@ sealed class PendingVoicePrompt {
     data class UndoRecentAlert(val alertId: String, val label: String) : PendingVoicePrompt()
     data class ConfirmShakeImpact(val lat: Double, val lng: Double, val heading: Float) : PendingVoicePrompt()
     data class ConfirmPassOverAlert(val alert: RoadAlert) : PendingVoicePrompt()
+    data class ConfirmChangeDestination(
+        val title: String,
+        val subtitle: String,
+        val latitude: Double,
+        val longitude: Double
+    ) : PendingVoicePrompt()
+}
+
+sealed class VoiceDestinationResult {
+    data class Applied(val speech: String, val status: String) : VoiceDestinationResult()
+    data class AskConfirmReplace(
+        val questionSpeech: String,
+        val prompt: PendingVoicePrompt.ConfirmChangeDestination,
+        val status: String
+    ) : VoiceDestinationResult()
+    data class ErrorOrLocked(val speech: String, val status: String) : VoiceDestinationResult()
 }
 
 class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitListener {
@@ -99,6 +115,8 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
     var onNearbyFuelQuery: (suspend (preferGnc: Boolean) -> String)? = null
     var onStopNavigationCommand: (() -> String)? = null
     var onRecalculateRouteCommand: (() -> String)? = null
+    var onNavigateToPlaceQuery: (suspend (placeQuery: String) -> VoiceDestinationResult)? = null
+    var onConfirmChangeDestinationDecision: ((title: String, subtitle: String, latitude: Double, longitude: Double) -> Unit)? = null
 
     private var isMuted = false
     private var isTtsSpeaking = false
@@ -212,7 +230,8 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                     promptExpiresAtMillis = undoExpiresAtMillis
                 }
                 is PendingVoicePrompt.ConfirmPassOverAlert,
-                is PendingVoicePrompt.ConfirmShakeImpact -> {
+                is PendingVoicePrompt.ConfirmShakeImpact,
+                is PendingVoicePrompt.ConfirmChangeDestination -> {
                     promptExpiresAtMillis = now + CONFIRM_WINDOW_MS
                 }
                 null -> Unit
@@ -294,6 +313,21 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         return next
     }
 
+    private fun handsFreeIdleStatusText(): String {
+        return if (DriverPreferences.isWakeWordRequiredInHandsFree(appContext)) {
+            val wake = DriverPreferences.getVoiceWakeWord(appContext)
+            "🎙️ Manos Libres — Decí \"$wake\" + comando"
+        } else {
+            "🎙️ Manos Libres activo — Hablá cuando quieras"
+        }
+    }
+
+    fun refreshHandsFreeStatusMessage() {
+        if (_isHandsFreeLoop.value && !_isListening.value) {
+            _copilotStatusMessage.value = handsFreeIdleStatusText()
+        }
+    }
+
     fun setHandsFreeLoopEnabled(enabled: Boolean, announce: Boolean = true) {
         _isHandsFreeLoop.value = enabled
         DriverPreferences.setHandsFreeLoopEnabled(appContext, enabled)
@@ -301,14 +335,20 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         if (enabled) {
             consecutiveHardwareErrors = 0
             if (announce && !isMuted) {
+                val wakeWord = DriverPreferences.getVoiceWakeWord(appContext)
+                val speechMsg = if (DriverPreferences.isWakeWordRequiredInHandsFree(appContext)) {
+                    "Copiloto manos libres activado. Para hablarme sin tocar la pantalla, decí $wakeWord seguido de tu comando."
+                } else {
+                    "Copiloto manos libres activado. Podés hablar en cualquier momento."
+                }
                 speak(
-                    "Copiloto manos libres activado. Podés hablar en cualquier momento.",
+                    speechMsg,
                     isWarning = false,
                     listenImmediatelyAfter = false,
                     queueIfSpeaking = true
                 )
             } else {
-                _copilotStatusMessage.value = "🎙️ Manos Libres activo: hablá directo sin tocar"
+                _copilotStatusMessage.value = handsFreeIdleStatusText()
                 if (!_isListening.value && !isTtsSpeaking) {
                     scheduleHandsFreeMonitor(postTtsVadDelayMs())
                 }
@@ -389,7 +429,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
 
         vadRunning = true
         _isVadMonitoring.value = true
-        _copilotStatusMessage.value = "🎙️ Manos Libres activo — Hablá cuando quieras"
+        _copilotStatusMessage.value = handsFreeIdleStatusText()
 
         vadThread = Thread {
             var recorder: AudioRecord? = null
@@ -695,7 +735,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         setAudioMuted(false)
         _copilotStatusMessage.value = "🔊 Reproduciendo audio de prueba del Copiloto..."
         speak(
-            "Prueba de audio VíaAlerta. El copiloto de ruta está calibrado y listo para guiarte.",
+            "Prueba de audio Vialerta. El copiloto de ruta está calibrado y listo para guiarte.",
             isWarning = true,
             listenImmediatelyAfter = false
         )
@@ -750,8 +790,10 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                             is PendingVoicePrompt.ConfirmPassOverAlert,
                             is PendingVoicePrompt.ConfirmShakeImpact ->
                                 "🎙️ Esperando respuesta ('sí', 'confirmo', 'no', 'central')..."
+                            is PendingVoicePrompt.ConfirmChangeDestination ->
+                                "🎙️ ¿Cambiar destino a ${activePrompt.title}? Decí 'sí' o 'no'..."
                             null ->
-                                "🎙️ Escuchando... Decí 'bache', 'radar', 'agua', 'obras'..."
+                                "🎙️ Escuchando... Decí 'bache', 'radar', 'llévame a...'..."
                         }
                     }
 
@@ -791,7 +833,8 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                                     pendingPrompt = null
                                 }
                             } else if (currentPrompt is PendingVoicePrompt.ConfirmPassOverAlert ||
-                                currentPrompt is PendingVoicePrompt.ConfirmShakeImpact
+                                currentPrompt is PendingVoicePrompt.ConfirmShakeImpact ||
+                                currentPrompt is PendingVoicePrompt.ConfirmChangeDestination
                             ) {
                                 // Keep confirmation prompt alive throughout its 20s TTL so delayed driver replies still confirm!
                                 if (now >= promptExpiresAtMillis) {
@@ -830,14 +873,14 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                         _copilotStatusMessage.value = when (error) {
                             SpeechRecognizer.ERROR_NO_MATCH,
                             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> if (_isHandsFreeLoop.value) {
-                                "🎙️ Manos Libres activo — Hablá cuando quieras"
+                                handsFreeIdleStatusText()
                             } else {
                                 "Sin detección. Tocá el micrófono para hablar."
                             }
                             SpeechRecognizer.ERROR_NETWORK,
                             SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Revisá señal de red o descargá voz offline en Ajustes."
                             else -> if (_isHandsFreeLoop.value) {
-                                "🎙️ Manos Libres activo — Hablá cuando quieras"
+                                handsFreeIdleStatusText()
                             } else {
                                 "Tocá el micrófono para dar un comando"
                             }
@@ -920,12 +963,12 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         mainHandler.post {
             _isListening.value = false
             cleanupSpeechRecognizer()
-            _copilotStatusMessage.value = if (_isHandsFreeLoop.value) {
-                "🎙️ Manos Libres activo — Hablá cuando quieras"
-            } else {
-                "Tocá el micrófono para hablar"
-            }
+        _copilotStatusMessage.value = if (_isHandsFreeLoop.value) {
+            handsFreeIdleStatusText()
+        } else {
+            "Tocá el micrófono para hablar"
         }
+    }
     }
 
     private fun cleanupSpeechRecognizer() {
@@ -945,6 +988,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
     ): Boolean {
         if (isRemainingDistanceCommand(rawCandidates) ||
             extractDistancePlaceQuery(rawCandidates) != null ||
+            extractNavigateToPlaceQuery(rawCandidates) != null ||
             isWhereAmICommand(rawCandidates) ||
             isRouteHazardsAheadCommand(rawCandidates) ||
             extractFuelQueryPreference(rawCandidates) != null ||
@@ -970,21 +1014,19 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
     }
 
     private fun processSpokenCandidates(rawCandidates: List<String>) {
-        val normalized = rawCandidates.map { normalizeSpeech(it) }.filter { it.isNotBlank() }
-        if (normalized.isEmpty()) return
-        val combinedText = normalized.joinToString(" | ")
-        val primaryText = normalized.first()
+        val initialNormalized = rawCandidates.map { normalizeSpeech(it) }.filter { it.isNotBlank() }
+        if (initialNormalized.isEmpty()) return
         val now = System.currentTimeMillis()
 
         // Anti-echo protection: ignore ASR results that simply parrot our own recent TTS output
         val snapshotRecent = synchronized(recentSpokenUtterances) { recentSpokenUtterances.toList() }
         val isUndoRightAfterReport = (pendingPrompt is PendingVoicePrompt.UndoRecentAlert) &&
             isUndoSpeechCommand(rawCandidates) &&
-            normalized.any { it.split(' ').size == 1 && it.contains("cancel") }
+            initialNormalized.any { it.split(' ').size == 1 && it.contains("cancel") }
         if (!isUndoRightAfterReport && isLikelySelfEcho(rawCandidates, snapshotRecent, now)) {
-            Log.d("VoiceCopilot", "Ignored acoustic self-echo from speaker/Bluetooth: '$primaryText'")
+            Log.d("VoiceCopilot", "Ignored acoustic self-echo from speaker/Bluetooth: '${initialNormalized.first()}'")
             _copilotStatusMessage.value = if (_isHandsFreeLoop.value) {
-                "🎙️ Manos Libres activo — Hablá cuando quieras"
+                handsFreeIdleStatusText()
             } else {
                 "Eco de altavoz ignorado"
             }
@@ -996,19 +1038,20 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
         val activePrompt = when (currentPrompt) {
             is PendingVoicePrompt.UndoRecentAlert -> if (now <= undoExpiresAtMillis) currentPrompt else null
             is PendingVoicePrompt.ConfirmPassOverAlert,
-            is PendingVoicePrompt.ConfirmShakeImpact -> if (now <= promptExpiresAtMillis) currentPrompt else null
+            is PendingVoicePrompt.ConfirmShakeImpact,
+            is PendingVoicePrompt.ConfirmChangeDestination -> if (now <= promptExpiresAtMillis) currentPrompt else null
             null -> null
         }
         if (currentPrompt != null && activePrompt == null) {
             pendingPrompt = null
         }
 
-        // 1. Handle contextual conversational prompts, letting any clear travel/hazard command override cleanly
+        // 1. Handle contextual conversational prompts without requiring wake word
         if (activePrompt != null) {
             val isYes = isAffirmativeSpeechCommand(rawCandidates)
             val isUndo = isUndoSpeechCommand(rawCandidates)
             val isNo = isNegativeSpeechCommand(rawCandidates) || isUndo
-            val hasExplicitCommand = isRecognizedNonConfirmationCommand(rawCandidates, normalized)
+            val hasExplicitCommand = isRecognizedNonConfirmationCommand(rawCandidates, initialNormalized)
 
             when (activePrompt) {
                 is PendingVoicePrompt.UndoRecentAlert -> {
@@ -1034,7 +1077,8 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                     if (isYes && !hasExplicitCommand) {
                         pendingPrompt = null
                         promptExpiresAtMillis = 0L
-                        val isCentral = combinedText.contains("central") || combinedText.contains("ambos")
+                        val combinedInit = initialNormalized.joinToString(" | ")
+                        val isCentral = combinedInit.contains("central") || combinedInit.contains("ambos")
                         speak("Ok, pozo confirmado y registrado en el punto exacto del golpe.", isWarning = true)
                         _copilotStatusMessage.value = "✅ ¡Pozo confirmado por impacto!"
                         onShakePotholeDecision?.invoke(activePrompt.lat, activePrompt.lng, activePrompt.heading, isCentral)
@@ -1074,12 +1118,62 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                         pendingPrompt = null
                     }
                 }
+                is PendingVoicePrompt.ConfirmChangeDestination -> {
+                    if (isYes && !hasExplicitCommand) {
+                        pendingPrompt = null
+                        promptExpiresAtMillis = 0L
+                        speak("Ok, cambiando destino a ${activePrompt.title}.", isWarning = false)
+                        _copilotStatusMessage.value = "🎯 Destino cambiado a ${activePrompt.title}"
+                        onConfirmChangeDestinationDecision?.invoke(
+                            activePrompt.title,
+                            activePrompt.subtitle,
+                            activePrompt.latitude,
+                            activePrompt.longitude
+                        )
+                        return
+                    } else if (isNo && !hasExplicitCommand) {
+                        pendingPrompt = null
+                        promptExpiresAtMillis = 0L
+                        speak("Perfecto, mantenemos el viaje actual.", isWarning = false)
+                        _copilotStatusMessage.value = "Destino actual mantenido"
+                        return
+                    } else if (!hasExplicitCommand && !currentListeningFromVad) {
+                        speak("Decí sí para cambiar el destino a ${activePrompt.title}, o no para seguir como veníamos.", isWarning = false, listenImmediatelyAfter = true)
+                        return
+                    } else if (hasExplicitCommand) {
+                        pendingPrompt = null
+                    }
+                }
             }
         }
 
+        // 1b. Hands-free VAD wake-word gate (prevents reacting to cabin chatter)
+        val effectiveCandidates = if (currentListeningFromVad && DriverPreferences.isWakeWordRequiredInHandsFree(appContext)) {
+            val wakeWord = DriverPreferences.getVoiceWakeWord(appContext)
+            val wakeResult = stripWakeWordIfMatched(rawCandidates, wakeWord)
+            if (!wakeResult.matched) {
+                Log.d("VoiceCopilot", "Hands-free speech ignored (missing wake word '$wakeWord'): '${initialNormalized.first()}'")
+                _copilotStatusMessage.value = handsFreeIdleStatusText()
+                return
+            }
+            if (wakeResult.wakeWordOnly) {
+                speak("Sí, te escucho.", isWarning = false, listenImmediatelyAfter = true)
+                _copilotStatusMessage.value = "🎙️ \"$wakeWord\" detectado — Decí tu comando"
+                return
+            }
+            wakeResult.strippedCandidates
+        } else {
+            rawCandidates
+        }
+
+        val normalized = effectiveCandidates.map { normalizeSpeech(it) }.filter { it.isNotBlank() }
+        if (normalized.isEmpty()) return
+        val combinedText = normalized.joinToString(" | ")
+        val primaryText = normalized.first()
+
         // Fallback undo if user spoke "cancelar" cleanly right after creating an alert
         val undoPrompt = pendingPrompt as? PendingVoicePrompt.UndoRecentAlert
-        if (undoPrompt != null && isUndoSpeechCommand(rawCandidates)) {
+        if (undoPrompt != null && isUndoSpeechCommand(effectiveCandidates)) {
             pendingPrompt = null
             undoExpiresAtMillis = 0L
             promptExpiresAtMillis = 0L
@@ -1089,26 +1183,26 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             return
         }
 
-        if (isDisablePreTripReminderCommand(rawCandidates)) {
+        if (isDisablePreTripReminderCommand(effectiveCandidates)) {
             DriverPreferences.setPreTripChecklistEnabled(appContext, false)
             speak("Recordatorio pre-viaje desactivado. Podés reactivarlo cuando quieras desde tu Perfil.", isWarning = false)
             _copilotStatusMessage.value = "Chequeo pre-viaje desactivado por voz"
             return
         }
 
-        if (isDisableHandsFreeCommand(rawCandidates)) {
+        if (isDisableHandsFreeCommand(effectiveCandidates)) {
             setHandsFreeLoopEnabled(enabled = false, announce = false)
             speak("Manos libres apagado. Tocá el micrófono cuando necesites hablar.", isWarning = false)
             _copilotStatusMessage.value = "Manos libres apagado por voz"
             return
         }
 
-        if (isEnableHandsFreeCommand(rawCandidates)) {
+        if (isEnableHandsFreeCommand(effectiveCandidates)) {
             setHandsFreeLoopEnabled(enabled = true, announce = true)
             return
         }
 
-        if (isStopNavigationCommand(rawCandidates)) {
+        if (isStopNavigationCommand(effectiveCandidates)) {
             val answer = onStopNavigationCommand?.invoke()
                 ?: "No hay una navegación activa para detener."
             speak(answer, isWarning = false)
@@ -1116,7 +1210,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             return
         }
 
-        if (isRecalculateRouteCommand(rawCandidates)) {
+        if (isRecalculateRouteCommand(effectiveCandidates)) {
             val answer = onRecalculateRouteCommand?.invoke()
                 ?: "Trazá un destino primero para recalcular ruta."
             speak(answer, isWarning = false)
@@ -1124,7 +1218,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             return
         }
 
-        if (isRemainingDistanceCommand(rawCandidates)) {
+        if (isRemainingDistanceCommand(effectiveCandidates)) {
             val answer = onRemainingDistanceQuery?.invoke()?.takeIf { it.isNotBlank() }
                 ?: "Todavía no hay un destino trazado en el mapa."
             speak(answer, isWarning = false)
@@ -1132,7 +1226,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             return
         }
 
-        val targetPlaceQuery = extractDistancePlaceQuery(rawCandidates)
+        val targetPlaceQuery = extractDistancePlaceQuery(effectiveCandidates)
         if (targetPlaceQuery != null) {
             val handler = onDistanceToPlaceQuery
             if (handler != null) {
@@ -1150,7 +1244,44 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             }
         }
 
-        val preferGncFuel = extractFuelQueryPreference(rawCandidates)
+        val navigatePlaceQuery = extractNavigateToPlaceQuery(effectiveCandidates)
+        if (navigatePlaceQuery != null) {
+            val handler = onNavigateToPlaceQuery
+            if (handler != null) {
+                _copilotStatusMessage.value = "🧭 Buscando $navigatePlaceQuery en segundo plano..."
+                copilotScope.launch {
+                    val outcome = try {
+                        handler.invoke(navigatePlaceQuery)
+                    } catch (_: Throwable) {
+                        VoiceDestinationResult.ErrorOrLocked(
+                            "No pude buscar $navigatePlaceQuery en este momento.",
+                            "Error al buscar $navigatePlaceQuery"
+                        )
+                    }
+                    when (outcome) {
+                        is VoiceDestinationResult.Applied -> {
+                            speak(outcome.speech, isWarning = false)
+                            _copilotStatusMessage.value = outcome.status
+                        }
+                        is VoiceDestinationResult.AskConfirmReplace -> {
+                            _copilotStatusMessage.value = outcome.status
+                            askFollowUpQuestion(
+                                questionSpeech = outcome.questionSpeech,
+                                prompt = outcome.prompt,
+                                isWarning = false
+                            )
+                        }
+                        is VoiceDestinationResult.ErrorOrLocked -> {
+                            speak(outcome.speech, isWarning = false)
+                            _copilotStatusMessage.value = outcome.status
+                        }
+                    }
+                }
+                return
+            }
+        }
+
+        val preferGncFuel = extractFuelQueryPreference(effectiveCandidates)
         if (preferGncFuel != null) {
             val handler = onNearbyFuelQuery
             if (handler != null) {
@@ -1168,7 +1299,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             }
         }
 
-        if (isWhereAmICommand(rawCandidates)) {
+        if (isWhereAmICommand(effectiveCandidates)) {
             val answer = onWhereAmIQuery?.invoke()?.takeIf { it.isNotBlank() }
                 ?: "Sin ubicación GPS confirmada por ahora."
             speak(answer, isWarning = false)
@@ -1176,7 +1307,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             return
         }
 
-        if (isRouteHazardsAheadCommand(rawCandidates)) {
+        if (isRouteHazardsAheadCommand(effectiveCandidates)) {
             val answer = onRouteHazardsAheadQuery?.invoke()?.takeIf { it.isNotBlank() }
                 ?: "Sin alertas reportadas adelante por el momento."
             speak(answer, isWarning = false)
@@ -1213,7 +1344,7 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             }
             matchText.contains("polic") || matchText.contains("gendarmer") || matchText.contains("caminera") ||
                 matchText.contains("control policial") || matchText.contains("operativo policial") -> {
-                speak("VíaAlerta no reporta controles policiales. Podés avisar radares de velocidad o peligros en ruta.", isWarning = false)
+                speak("Vialerta no reporta controles policiales. Podés avisar radares de velocidad o peligros en ruta.", isWarning = false)
                 _copilotStatusMessage.value = "Controles policiales no admitidos (solo radares viales)"
             }
             matchText.contains("bache central") || matchText.contains("pozo central") || matchText.contains("crater central") ||
@@ -1287,14 +1418,14 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                 onHazardCommandDetected?.invoke("semaforo", 0, "Semáforo Apagado", true, anchor)
             }
             matchText.contains("hola") || matchText.contains("ayuda") || matchText.contains("copiloto") -> {
-                speak("Copiloto listo. Podés preguntar cuánto falta, dónde estoy, peligros adelante, estación cercana o reportar pozo y radar.", isWarning = false, listenImmediatelyAfter = true)
+                speak("Copiloto listo. Podés decir llévame a una ciudad, cuánto falta, dónde estoy, peligros adelante o reportar pozo y radar.", isWarning = false, listenImmediatelyAfter = true)
                 _copilotStatusMessage.value = "Copiloto listo para escuchar"
             }
             else -> {
                 // Only speak "No te entendí" on intentional manual mic taps; in background hands-free VAD,
                 // ignore cabin chatter silently to avoid self-triggering echo loops.
                 if (!currentListeningFromVad) {
-                    speak("No te entendí. Podés decir: cuánto falta, estación cercana, pozo o radar.", isWarning = false)
+                    speak("No te entendí. Podés decir: llévame a Rosario, cuánto falta, pozo o radar.", isWarning = false)
                 }
                 _copilotStatusMessage.value = "Oído '$primaryText' (sin comando)"
             }
@@ -1350,6 +1481,8 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
             "publicado en ambas manos",
             "calzada en condiciones normales",
             "copiloto manos libres activado",
+            "cuando quieras hablarme en viaje",
+            "si te escucho",
             "hora estimada de llegada",
             "alerta confirmada",
             "alerta cancelada"
@@ -1640,6 +1773,81 @@ class VoiceCopilotManager(private val context: Context) : TextToSpeech.OnInitLis
                     t.contains("encender microfono") ||
                     t.contains("prender microfono")
             }
+        }
+
+        data class WakeWordMatchResult(
+            val matched: Boolean,
+            val strippedCandidates: List<String>,
+            val wakeWordOnly: Boolean
+        )
+
+        fun stripWakeWordIfMatched(candidates: List<String>, wakeWord: String): WakeWordMatchResult {
+            val baseNorm = normalizeSpeech(wakeWord).ifBlank { "copiloto" }
+            val variants = linkedSetOf(baseNorm).apply {
+                if (baseNorm == "copiloto") {
+                    add("co piloto")
+                } else if (baseNorm == "vialerta") {
+                    add("via alerta")
+                    add("vi alerta")
+                }
+            }
+            val strippedResults = mutableListOf<String>()
+            var anyMatched = false
+            for (raw in candidates) {
+                val norm = normalizeSpeech(raw)
+                if (norm.isBlank()) continue
+                var matchedHere = false
+                var stripped = norm
+                for (variant in variants) {
+                    val regex = Regex("(?:^|\\s)${Regex.escape(variant)}(?=\\s|$)")
+                    if (regex.containsMatchIn(stripped)) {
+                        matchedHere = true
+                        stripped = stripped
+                            .replace(regex, " ")
+                            .replace(Regex("^(?:hola|che|oye|hey|ok)\\s+"), "")
+                            .replace(Regex("\\s+"), " ")
+                            .trim()
+                        break
+                    }
+                }
+                if (matchedHere) {
+                    anyMatched = true
+                    if (stripped.isNotBlank() && stripped !in setOf("hola", "che", "oye", "hey", "ok")) {
+                        strippedResults.add(stripped)
+                    }
+                }
+            }
+            return WakeWordMatchResult(
+                matched = anyMatched,
+                strippedCandidates = strippedResults,
+                wakeWordOnly = anyMatched && strippedResults.isEmpty()
+            )
+        }
+
+        fun extractNavigateToPlaceQuery(candidates: List<String>): String? {
+            if (extractDistancePlaceQuery(candidates) != null) return null
+            val patterns = listOf(
+                Regex("(?:llevame a|ir a|quiero ir a|vamos a|viajar a|rumbo a|navegar a|navega a|guiame a)\\s+(.+)"),
+                Regex("(?:buscar ruta a|trazar ruta a|traza ruta a|calcular ruta a|cambiar destino a|destino a)\\s+(.+)"),
+                Regex("(?:poner destino|fijar destino|cambiar destino|buscar ciudad|buscar localidad|buscar destino)\\s+(.+)")
+            )
+            val genericEndings = setOf(
+                "casa", "destino", "mi destino", "ruta", "otra ruta", "ahi", "aca", "allá", "alla"
+            )
+            for (raw in candidates) {
+                val t = normalizeSpeech(raw)
+                for (regex in patterns) {
+                    val match = regex.find(t) ?: continue
+                    val place = match.groupValues.getOrNull(1)
+                        ?.replace(Regex("^(?:a|hacia|hasta|para|la ciudad de|la localidad de|el pueblo de|destino)\\s+"), "")
+                        ?.trim()
+                        .orEmpty()
+                    if (place.length >= 2 && place !in genericEndings) {
+                        return place
+                    }
+                }
+            }
+            return null
         }
     }
 }

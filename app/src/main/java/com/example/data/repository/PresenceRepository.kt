@@ -37,7 +37,7 @@ class PresenceRepository(private val db: FirebaseFirestore) {
         return try {
             val payload = mapOf(
                 "userId" to uid,
-                "userName" to userName.ifBlank { "Conductor VíaAlerta" },
+                "userName" to userName.ifBlank { "Conductor Vialerta" },
                 "routeName" to routeName.ifBlank { "Ruta en Argentina" },
                 "speedKmH" to speedKmH,
                 "isDriving" to isDriving,

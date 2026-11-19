@@ -93,7 +93,7 @@ private fun shareViaWhatsApp(context: Context, text: String) {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
         }
-        context.startActivity(Intent.createChooser(shareIntent, "Compartir enlace VíaAlerta"))
+        context.startActivity(Intent.createChooser(shareIntent, "Compartir enlace Vialerta"))
     }
 }
 
@@ -529,7 +529,7 @@ fun HitchhikeScreen(
                                                 .clickable {
                                                     shareViaWhatsApp(
                                                         context,
-                                                        "¡Hola! Te comparto VíaAlerta para viajar seguro y seguir mi viaje en la ruta en tiempo real: https://viaalerta.app"
+                                                        "¡Hola! Te comparto Vialerta para viajar seguro y seguir mi viaje en la ruta en tiempo real: https://viaalerta.app"
                                                     )
                                                 }
                                                 .padding(4.dp)

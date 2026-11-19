@@ -510,7 +510,7 @@ fun RealRoadMapView(
                 )
             }
 
-            // 6. Followed Seguime Vehicle (trail + live pin inside VíaAlerta map)
+            // 6. Followed Seguime Vehicle (trail + live pin inside Vialerta map)
             if (followedSession != null && followedSession.status == "active" &&
                 (followedSession.latitude != 0.0 || followedSession.longitude != 0.0)
             ) {

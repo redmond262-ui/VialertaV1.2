@@ -100,7 +100,7 @@ class SeguimeRepository(
     ): Result<String> {
         return try {
             requireUserId()
-            val cleanDriver = driverName.trim().ifBlank { "Conductor VíaAlerta" }.take(100)
+            val cleanDriver = driverName.trim().ifBlank { "Conductor Vialerta" }.take(100)
             val cleanVehicle = vehicleSummary.trim().take(120)
             val cleanDest = destinationTitle.trim().take(150)
             val cleanOrigin = originName.trim().take(150)
@@ -249,7 +249,7 @@ class SeguimeRepository(
                 val created = tryWriteSessionCreate(
                     sessionId = sessionId,
                     uid = uid,
-                    driverName = prefs?.getString(KEY_DRIVER_NAME, "Conductor VíaAlerta") ?: "Conductor VíaAlerta",
+                    driverName = prefs?.getString(KEY_DRIVER_NAME, "Conductor Vialerta") ?: "Conductor Vialerta",
                     vehicleSummary = prefs?.getString(KEY_VEHICLE_SUMMARY, "") ?: "",
                     destinationTitle = prefs?.getString(KEY_DESTINATION_TITLE, "") ?: "",
                     originName = prefs?.getString(KEY_ORIGIN_NAME, "") ?: "",
@@ -408,7 +408,7 @@ class SeguimeRepository(
         return try {
             val payload = mapOf(
                 "ownerUid" to uid,
-                "driverName" to driverName.take(100).ifBlank { "Conductor VíaAlerta" },
+                "driverName" to driverName.take(100).ifBlank { "Conductor Vialerta" },
                 "vehicleSummary" to vehicleSummary.take(120),
                 "destinationTitle" to destinationTitle.take(150),
                 "originName" to originName.take(150),
@@ -578,11 +578,11 @@ class SeguimeRepository(
             destinationTitle: String,
             liveUrl: String
         ): String {
-            val cleanDriver = driverName.trim().ifBlank { "Conductor VíaAlerta" }
+            val cleanDriver = driverName.trim().ifBlank { "Conductor Vialerta" }
             val vehicleLine = vehicleSummary.trim().takeIf { it.isNotBlank() }?.let { "\n🚗 *Vehículo:* $it" } ?: ""
             val destLine = destinationTitle.trim().takeIf { it.isNotBlank() }?.let { "\n🎯 *Destino:* $it" } ?: ""
             return """
-                📍 *Seguime en vivo (VíaAlerta)*
+                📍 *Seguime en vivo (Vialerta)*
                 
                 Soy *$cleanDriver*, salí a la ruta. Podés seguir mi recorrido en tiempo real desde este enlace privado:$vehicleLine$destLine
                 

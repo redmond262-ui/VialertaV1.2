@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "VíaAlerta"
+rootProject.name = "Vialerta"
 
 include(":app")

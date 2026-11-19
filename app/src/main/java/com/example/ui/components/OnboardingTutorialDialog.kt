@@ -87,7 +87,7 @@ fun OnboardingTutorialDialog(
             badge = "PASO 1 DE 3 • RADAR INTELIGENTE",
             title = "Alertas en Ruta y Distancia Real",
             subtitle = "Anticipación precisa para evitar roturas",
-            description = "VíaAlerta calcula la distancia por el trazado real de la ruta. Avisa por voz y pantalla antes de pozos, obras, calzada destruida y badenes para que frenes a tiempo.",
+            description = "Vialerta calcula la distancia por el trazado real de la ruta. Avisa por voz y pantalla antes de pozos, obras, calzada destruida y badenes para que frenes a tiempo.",
             icon = Icons.Default.Radar,
             iconColor = RouteBlue500,
             highlightBoxText = "📡 Alertas activas por voz aún con la pantalla apagada o usando Maps/Waze."
@@ -105,7 +105,7 @@ fun OnboardingTutorialDialog(
             badge = "PASO 3 DE 3 • BIENVENIDA Y PUNTOS",
             title = "7 Días de PRO Gratis + Puntos Ruta",
             subtitle = "¡Unite a la comunidad y sumá recompensas!",
-            description = "Por instalar la app tenés 7 días de VíaAlerta PRO incluidos. Además, cada reporte (+30 pts) o confirmación (+15 pts) te da Puntos Ruta (tope 200 pts/día) para canjear por más días PRO gratis.",
+            description = "Por instalar la app tenés 7 días de Vialerta PRO incluidos. Además, cada reporte (+30 pts) o confirmación (+15 pts) te da Puntos Ruta (tope 200 pts/día) para canjear por más días PRO gratis.",
             icon = Icons.Default.CardGiftcard,
             iconColor = SafetyGreen500,
             highlightBoxText = "🎁 Ganá días PRO gratis simplemente avisando y confirmando baches."

@@ -33,6 +33,13 @@ data class ActiveTripSnapshot(
  * across MainActivity and RoadRadarForegroundService so proximity alerts, voice commands,
  * and TTS ducking operate seamlessly with the screen off or while using other apps.
  */
+data class PendingVoiceDestination(
+    val title: String,
+    val subtitle: String,
+    val latitude: Double,
+    val longitude: Double
+)
+
 object ViaAlertaRadarHolder {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -47,6 +54,7 @@ object ViaAlertaRadarHolder {
     val isDriveSimulationActive = MutableStateFlow(false)
     val activeTripSnapshot = MutableStateFlow<ActiveTripSnapshot?>(null)
     val latestActiveAlerts = MutableStateFlow<List<RoadAlert>>(emptyList())
+    val pendingVoiceDestination = MutableStateFlow<PendingVoiceDestination?>(null)
 
     var onStopTripRequested: (() -> Boolean)? = null
     var onRecalculateTripRequested: (() -> Boolean)? = null
@@ -101,7 +109,7 @@ object ViaAlertaRadarHolder {
                             directionDesc = LocationRadarManager.headingToDirectionText(loc.heading),
                             affectsBothDirections = affectsBoth,
                             estimatedKm = loc.estimatedKm,
-                            reporterName = user.displayName?.ifBlank { null } ?: "Conductor VíaAlerta"
+                            reporterName = user.displayName?.ifBlank { null } ?: "Conductor Vialerta"
                         )
                         result.getOrNull()?.let { createdId ->
                             voice.registerRecentAlertForVoiceUndo(createdId, commandName)
@@ -150,7 +158,7 @@ object ViaAlertaRadarHolder {
                         directionDesc = LocationRadarManager.headingToDirectionText(heading),
                         affectsBothDirections = central,
                         estimatedKm = km,
-                        reporterName = user.displayName?.ifBlank { null } ?: "Conductor VíaAlerta"
+                        reporterName = user.displayName?.ifBlank { null } ?: "Conductor Vialerta"
                     )
                     res.getOrNull()?.let { voice.registerRecentAlertForVoiceUndo(it, "Pozo por impacto") }
                 }
@@ -330,6 +338,51 @@ object ViaAlertaRadarHolder {
                 }
             }
         }
+        if (voice.onNavigateToPlaceQuery == null) {
+            voice.onNavigateToPlaceQuery = { placeQuery ->
+                val user = Firebase.auth.currentUser
+                val userEmail = user?.email?.lowercase()?.trim() ?: ""
+                val isPro = com.example.data.repository.UserRepository.isProEffective(appCtx, null, userEmail)
+                if (!isPro) {
+                    VoiceDestinationResult.ErrorOrLocked(
+                        speech = "La búsqueda de destinos por voz es exclusiva de Vialerta PRO. Podés activarla desde tu perfil.",
+                        status = "🔒 Búsqueda de ruta por voz: Vialerta PRO"
+                    )
+                } else {
+                    val loc = radar.currentLocation.value
+                    val places = RoadRoutingManager.searchPlaces(
+                        query = placeQuery,
+                        context = appCtx,
+                        biasLat = loc.latitude,
+                        biasLon = loc.longitude
+                    )
+                    val target = places.firstOrNull()
+                    if (target == null) {
+                        VoiceDestinationResult.ErrorOrLocked(
+                            speech = "No encontré la localidad $placeQuery en el mapa.",
+                            status = "Sin resultados para $placeQuery"
+                        )
+                    } else {
+                        val details = RoadRoutingManager.getActualRouteDetails(
+                            loc.latitude, loc.longitude, target.latitude, target.longitude
+                        )
+                        val distLabel = LocationRadarManager.formatDisplayDistance(details.distanceMeters)
+                        val (_, durationLabel) = RoadRoutingManager.calculateFormattedETA(details.durationSeconds)
+                        val placeTitle = target.title.ifBlank { placeQuery }
+                        pendingVoiceDestination.value = PendingVoiceDestination(
+                            title = placeTitle,
+                            subtitle = target.subtitle,
+                            latitude = target.latitude,
+                            longitude = target.longitude
+                        )
+                        VoiceDestinationResult.Applied(
+                            speech = "$placeTitle queda a $distLabel, aproximadamente $durationLabel. Destino listo en tu mapa.",
+                            status = "🎯 $placeTitle ($distLabel • $durationLabel)"
+                        )
+                    }
+                }
+            }
+        }
     }
 
     @Synchronized
@@ -338,6 +391,7 @@ object ViaAlertaRadarHolder {
         isDriveSimulationActive.value = false
         activeTripSnapshot.value = null
         latestActiveAlerts.value = emptyList()
+        pendingVoiceDestination.value = null
         onStopTripRequested = null
         onRecalculateTripRequested = null
         try {

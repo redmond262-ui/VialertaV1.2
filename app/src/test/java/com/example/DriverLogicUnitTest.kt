@@ -624,5 +624,79 @@ class DriverLogicUnitTest {
         assertTrue(sms.contains("https://maps.google.com/?q=-35.12345,-59.54321"))
         assertTrue(sms.contains(url))
     }
+
+    @Test
+    fun voiceWakeWord_sanitizesCustomNamesAndFiltersCabinChatter() {
+        assertEquals("Copiloto", DriverPreferences.sanitizeWakeWord(""))
+        assertEquals("Copiloto", DriverPreferences.sanitizeWakeWord("  a "))
+        assertEquals("Vialerta", DriverPreferences.sanitizeWakeWord("  Vialerta  "))
+        assertEquals("Ruta", DriverPreferences.sanitizeWakeWord("Ruta"))
+
+        // Default "Copiloto" with command
+        val withCommand = VoiceCopilotManager.stripWakeWordIfMatched(
+            candidates = listOf("Copiloto llévame a Rosario"),
+            wakeWord = "Copiloto"
+        )
+        assertTrue(withCommand.matched)
+        assertFalse(withCommand.wakeWordOnly)
+        assertEquals(listOf("llevame a rosario"), withCommand.strippedCandidates)
+
+        // Speech-to-text variant "Co piloto"
+        val splitVariant = VoiceCopilotManager.stripWakeWordIfMatched(
+            candidates = listOf("Co piloto reportar pozo"),
+            wakeWord = "Copiloto"
+        )
+        assertTrue(splitVariant.matched)
+        assertFalse(splitVariant.wakeWordOnly)
+        assertEquals(listOf("reportar pozo"), splitVariant.strippedCandidates)
+
+        // Wake word spoken alone or with greeting
+        val onlyWakeWord = VoiceCopilotManager.stripWakeWordIfMatched(
+            candidates = listOf("Hola copiloto"),
+            wakeWord = "Copiloto"
+        )
+        assertTrue(onlyWakeWord.matched)
+        assertTrue(onlyWakeWord.wakeWordOnly)
+
+        // Custom wake word ("Vialerta" and common STT split "Vía alerta")
+        val customVialerta = VoiceCopilotManager.stripWakeWordIfMatched(
+            candidates = listOf("Vía alerta reportar radar"),
+            wakeWord = "Vialerta"
+        )
+        assertTrue(customVialerta.matched)
+        assertFalse(customVialerta.wakeWordOnly)
+        assertEquals(listOf("reportar radar"), customVialerta.strippedCandidates)
+
+        // Arbitrary user-chosen wake word
+        val customMax = VoiceCopilotManager.stripWakeWordIfMatched(
+            candidates = listOf("Max cuánto falta"),
+            wakeWord = "Max"
+        )
+        assertTrue(customMax.matched)
+        assertFalse(customMax.wakeWordOnly)
+        assertEquals(listOf("cuanto falta"), customMax.strippedCandidates)
+
+        // Unrelated cabin chatter without wake word must be ignored
+        val chatter = VoiceCopilotManager.stripWakeWordIfMatched(
+            candidates = listOf("pasame el mate", "qué calor hace hoy"),
+            wakeWord = "Copiloto"
+        )
+        assertFalse(chatter.matched)
+        assertTrue(chatter.strippedCandidates.isEmpty())
+    }
+
+    @Test
+    fun voiceNavigateToPlace_extractsDestinationWithoutCollidingWithDistanceQueries() {
+        assertEquals("rosario", VoiceCopilotManager.extractNavigateToPlaceQuery(listOf("llévame a Rosario")))
+        assertEquals("cordoba", VoiceCopilotManager.extractNavigateToPlaceQuery(listOf("buscar ciudad Córdoba")))
+        assertEquals("tandil", VoiceCopilotManager.extractNavigateToPlaceQuery(listOf("trazar ruta a Tandil")))
+        assertEquals("mar del plata", VoiceCopilotManager.extractNavigateToPlaceQuery(listOf("cambiar destino a Mar del Plata")))
+        assertEquals("villa carlos paz", VoiceCopilotManager.extractNavigateToPlaceQuery(listOf("quiero ir a Villa Carlos Paz")))
+
+        // Distance-only queries must NOT be hijacked as navigation requests
+        assertEquals(null, VoiceCopilotManager.extractNavigateToPlaceQuery(listOf("¿A cuánto queda Rosario?")))
+        assertEquals("rosario", VoiceCopilotManager.extractDistancePlaceQuery(listOf("¿A cuánto queda Rosario?")))
+    }
 }
+
 

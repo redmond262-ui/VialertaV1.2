@@ -72,7 +72,7 @@ class UserRepository(private val db: FirebaseFirestore) {
                 .ifBlank { buildReferralCode(uid) }
             val payload = mapOf(
                 "userId" to uid,
-                "name" to profile.name.ifBlank { auth.currentUser?.displayName ?: "Conductor VíaAlerta" },
+                "name" to profile.name.ifBlank { auth.currentUser?.displayName ?: "Conductor Vialerta" },
                 "email" to (profile.email.ifBlank { auth.currentUser?.email ?: "" }),
                 "dni" to profile.dni,
                 "isDniVerified" to profile.isDniVerified,
@@ -117,7 +117,7 @@ class UserRepository(private val db: FirebaseFirestore) {
             val generatedCode = current?.referralCode?.ifBlank { null } ?: buildReferralCode(userId)
             val displayName = current?.name?.ifBlank { null }
                 ?: auth.currentUser?.displayName?.ifBlank { null }
-                ?: "Conductor VíaAlerta"
+                ?: "Conductor Vialerta"
 
             if (current == null) {
                 val sevenDaysMillis = 7L * 24L * 60L * 60L * 1000L
@@ -229,7 +229,7 @@ class UserRepository(private val db: FirebaseFirestore) {
 
             val myName = myProfile?.name?.ifBlank { null }
                 ?: auth.currentUser?.displayName?.ifBlank { null }
-                ?: "Conductor VíaAlerta"
+                ?: "Conductor Vialerta"
 
             val refPayload = mapOf(
                 "refereeUid" to uid,
