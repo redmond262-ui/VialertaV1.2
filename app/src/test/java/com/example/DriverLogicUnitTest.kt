@@ -605,5 +605,24 @@ class DriverLogicUnitTest {
         // Mandatory update ignores previous optional dismissal
         assertTrue(FeatureFlagsRepository.shouldPromptAppUpdate(3, activeUpdate.copy(mandatory = true), dismissedVersionCode = 4))
     }
+
+    @Test
+    fun seguimeOfflineSmsMessage_includesCoordinatesMapsLinkAndLiveUrl() {
+        val url = SeguimeRepository.buildSeguimeUrl("seguime_abc1234567890xyz")
+        val sms = SeguimeRepository.buildOfflineSmsMessage(
+            driverName = "Juan Perez",
+            vehicleSummary = "Hilux (AA123BB)",
+            destinationTitle = "Mar del Plata",
+            latitude = -35.12345,
+            longitude = -59.54321,
+            liveUrl = url
+        )
+        assertTrue(sms.contains("Juan Perez"))
+        assertTrue(sms.contains("Hilux (AA123BB)"))
+        assertTrue(sms.contains("Mar del Plata"))
+        assertTrue(sms.contains("-35.12345,-59.54321"))
+        assertTrue(sms.contains("https://maps.google.com/?q=-35.12345,-59.54321"))
+        assertTrue(sms.contains(url))
+    }
 }
 

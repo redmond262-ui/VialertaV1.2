@@ -85,33 +85,32 @@ class SeguimeRepository(
         editor?.apply()
     }
 
-    suspend fun startOrReuseSession(
+    /**
+     * Activates (or reuses) a Seguime session locally in <1ms so the UI toggles
+     * to "Seguime ON" and opens sharing immediately without blocking on mobile data.
+     * Follow up with [syncSessionToCloudNow] in a background coroutine.
+     */
+    fun prepareLocalSessionSync(
         driverName: String,
         vehicleSummary: String,
         destinationTitle: String,
         originName: String,
         latitude: Double,
-        longitude: Double,
-        speedKmH: Float,
-        heading: Float
+        longitude: Double
     ): Result<String> {
         return try {
-            val uid = requireUserId()
+            requireUserId()
             val cleanDriver = driverName.trim().ifBlank { "Conductor VíaAlerta" }.take(100)
             val cleanVehicle = vehicleSummary.trim().take(120)
             val cleanDest = destinationTitle.trim().take(150)
             val cleanOrigin = originName.trim().take(150)
             val existingId = getActiveSessionId()
             if (existingId != null) {
-                updateSessionMetadataOrLocation(
-                    sessionId = existingId,
-                    latitude = latitude,
-                    longitude = longitude,
-                    speedKmH = speedKmH,
-                    heading = heading,
-                    destinationTitle = cleanDest,
-                    forceImmediate = true
-                )
+                if (cleanDest.isNotBlank()) {
+                    appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)?.edit()
+                        ?.putString(KEY_DESTINATION_TITLE, cleanDest)
+                        ?.apply()
+                }
                 return Result.success(existingId)
             }
 
@@ -130,28 +129,63 @@ class SeguimeRepository(
                 needsCreateSync = true,
                 needsLocationSync = false
             )
+            Result.success(sessionId)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
-            val createdOnline = tryWriteSessionCreate(
+    /**
+     * Pushes a locally activated Seguime session (or latest telemetry) to Firestore
+     * without blocking the UI. Safe to invoke from a background scope.
+     */
+    suspend fun syncSessionToCloudNow(
+        sessionId: String,
+        latitude: Double,
+        longitude: Double,
+        speedKmH: Float,
+        heading: Float,
+        destinationTitle: String? = null
+    ): Boolean {
+        return updateSessionMetadataOrLocation(
+            sessionId = sessionId,
+            latitude = latitude,
+            longitude = longitude,
+            speedKmH = speedKmH,
+            heading = heading,
+            destinationTitle = destinationTitle,
+            forceImmediate = true
+        )
+    }
+
+    suspend fun startOrReuseSession(
+        driverName: String,
+        vehicleSummary: String,
+        destinationTitle: String,
+        originName: String,
+        latitude: Double,
+        longitude: Double,
+        speedKmH: Float,
+        heading: Float
+    ): Result<String> {
+        return try {
+            val localRes = prepareLocalSessionSync(
+                driverName = driverName,
+                vehicleSummary = vehicleSummary,
+                destinationTitle = destinationTitle,
+                originName = originName,
+                latitude = latitude,
+                longitude = longitude
+            )
+            val sessionId = localRes.getOrElse { return Result.failure(it) }
+            syncSessionToCloudNow(
                 sessionId = sessionId,
-                uid = uid,
-                driverName = cleanDriver,
-                vehicleSummary = cleanVehicle,
-                destinationTitle = cleanDest,
-                originName = cleanOrigin,
                 latitude = latitude,
                 longitude = longitude,
                 speedKmH = speedKmH,
                 heading = heading,
-                points = initialPoints,
-                expiresAtMillis = expiresAt
+                destinationTitle = destinationTitle
             )
-            if (createdOnline) {
-                appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)?.edit()
-                    ?.putBoolean(KEY_NEEDS_CREATE_SYNC, false)
-                    ?.putLong(KEY_LAST_SENT_AT_MS, now)
-                    ?.apply()
-            }
-
             Result.success(sessionId)
         } catch (e: CancellationException) {
             throw e
@@ -389,7 +423,7 @@ class SeguimeRepository(
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
-            withTimeout(7500L) {
+            withTimeout(4500L) {
                 db.collection(COLLECTION_NAME).document(sessionId).set(payload).await()
             }
             true
@@ -557,6 +591,22 @@ class SeguimeRepository(
                 🔒 _Por privacidad, este enlace caduca automáticamente apenas termine o cancele el viaje._
                 📡 _Nota: En tramos rurales o de montaña sin señal 4G/5G el mapa conserva mi última posición GPS y actualiza ni bien vuelve la cobertura._
             """.trimIndent()
+        }
+
+        fun buildOfflineSmsMessage(
+            driverName: String,
+            vehicleSummary: String,
+            destinationTitle: String,
+            latitude: Double,
+            longitude: Double,
+            liveUrl: String
+        ): String {
+            val cleanDriver = driverName.trim().ifBlank { "Conductor ViaAlerta" }
+            val latStr = String.format(java.util.Locale.US, "%.5f", latitude)
+            val lngStr = String.format(java.util.Locale.US, "%.5f", longitude)
+            val vehiclePart = vehicleSummary.trim().takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+            val destPart = destinationTitle.trim().takeIf { it.isNotBlank() }?.let { " Rumbo a $it." } ?: ""
+            return "ViaAlerta Seguime - $cleanDriver$vehiclePart.$destPart Mi GPS actual: $latStr,$lngStr https://maps.google.com/?q=$latStr,$lngStr Enlace en vivo: $liveUrl"
         }
 
         fun serializePoints(points: List<SeguimePoint>): String {

@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAlert
 import androidx.compose.material.icons.filled.CheckCircle
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -121,8 +123,14 @@ import com.example.util.OfflineAlertQueue
 import com.example.util.RoadRoutingManager
 import com.example.util.ViaAlertaRadarHolder
 import com.example.util.VoiceCopilotManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -241,13 +249,27 @@ fun MapScreen(
 
     // Offline alerts queue & Seguime (live family sharing) state
     val seguimeRepo = remember { SeguimeRepository(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
     var activeSeguimeSessionId by remember {
         mutableStateOf(if (isGuestMode) null else seguimeRepo.getActiveSessionId())
     }
+    var seguimePendingOfflineSync by remember {
+        mutableStateOf(!isGuestMode && seguimeRepo.hasPendingOfflineSync())
+    }
     var showSeguimeManageDialog by remember { mutableStateOf(false) }
-    var isStartingSeguime by remember { mutableStateOf(false) }
     var pendingOfflineCount by remember { mutableIntStateOf(OfflineAlertQueue.count(context)) }
     var followedFocusTrigger by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(lifecycleOwner, isGuestMode) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && !isGuestMode) {
+                activeSeguimeSessionId = seguimeRepo.getActiveSessionId()
+                seguimePendingOfflineSync = seguimeRepo.hasPendingOfflineSync()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val followedSeguimeState by remember(followedSeguimeSessionId) {
         if (followedSeguimeSessionId.isNullOrBlank()) {
@@ -286,18 +308,20 @@ fun MapScreen(
         pendingOfflineCount = OfflineAlertQueue.count(context)
         if (!isGuestMode) {
             activeSeguimeSessionId = seguimeRepo.getActiveSessionId()
+            seguimePendingOfflineSync = seguimeRepo.hasPendingOfflineSync()
         }
     }
 
+    fun buildDriverVehicleSummary(): String = listOfNotNull(
+        userProfile?.defaultVehicle?.takeIf { it.isNotBlank() },
+        userProfile?.defaultPlate?.takeIf { it.isNotBlank() }?.let { "($it)" }
+    ).joinToString(" ")
+
     fun shareSeguimeLink(sessionId: String) {
         val url = SeguimeRepository.buildSeguimeUrl(sessionId)
-        val vehicleSummary = listOfNotNull(
-            userProfile?.defaultVehicle?.takeIf { it.isNotBlank() },
-            userProfile?.defaultPlate?.takeIf { it.isNotBlank() }?.let { "($it)" }
-        ).joinToString(" ")
         val message = SeguimeRepository.buildWhatsAppShareMessage(
             driverName = userProfile?.name?.ifBlank { null } ?: currentUserName,
-            vehicleSummary = vehicleSummary,
+            vehicleSummary = buildDriverVehicleSummary(),
             destinationTitle = selectedDestination?.title ?: "",
             liveUrl = url
         )
@@ -315,44 +339,93 @@ fun MapScreen(
         }
     }
 
+    fun shareSeguimeViaSms(sessionId: String) {
+        val url = SeguimeRepository.buildSeguimeUrl(sessionId)
+        val loc = locationRadarManager.currentLocation.value
+        val smsBody = SeguimeRepository.buildOfflineSmsMessage(
+            driverName = userProfile?.name?.ifBlank { null } ?: currentUserName,
+            vehicleSummary = buildDriverVehicleSummary(),
+            destinationTitle = selectedDestination?.title ?: "",
+            latitude = loc.latitude,
+            longitude = loc.longitude,
+            liveUrl = url
+        )
+        try {
+            val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")).apply {
+                putExtra("sms_body", smsBody)
+            }
+            context.startActivity(smsIntent)
+        } catch (t: Throwable) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("No se pudo abrir la app de SMS: ${t.message}")
+            }
+        }
+    }
+
     fun triggerStartOrManageSeguime() {
         if (isGuestMode) {
             showGuestUpgradeDialog = true
             return
         }
-        val currentId = activeSeguimeSessionId
+        val currentId = activeSeguimeSessionId ?: seguimeRepo.getActiveSessionId()
         if (currentId != null) {
+            activeSeguimeSessionId = currentId
+            seguimePendingOfflineSync = seguimeRepo.hasPendingOfflineSync()
             showSeguimeManageDialog = true
             return
         }
-        if (isStartingSeguime) return
-        isStartingSeguime = true
-        coroutineScope.launch {
-            val vehicleSummary = listOfNotNull(
-                userProfile?.defaultVehicle?.takeIf { it.isNotBlank() },
-                userProfile?.defaultPlate?.takeIf { it.isNotBlank() }?.let { "($it)" }
-            ).joinToString(" ")
-            val res = seguimeRepo.startOrReuseSession(
-                driverName = userProfile?.name?.ifBlank { null } ?: currentUserName,
-                vehicleSummary = vehicleSummary,
-                destinationTitle = selectedDestination?.title ?: "",
-                originName = driverLocation.routeName,
-                latitude = driverLocation.latitude,
-                longitude = driverLocation.longitude,
-                speedKmH = driverLocation.speedKmH,
-                heading = driverLocation.heading
+
+        val loc = locationRadarManager.currentLocation.value
+        val driverName = userProfile?.name?.ifBlank { null } ?: currentUserName
+        val vehicleSummary = buildDriverVehicleSummary()
+        val destTitle = selectedDestination?.title ?: ""
+
+        // Activate locally in <1ms so the button switches to "Seguime ON" immediately without blocking on network
+        val localRes = seguimeRepo.prepareLocalSessionSync(
+            driverName = driverName,
+            vehicleSummary = vehicleSummary,
+            destinationTitle = destTitle,
+            originName = loc.routeName,
+            latitude = loc.latitude,
+            longitude = loc.longitude
+        )
+
+        if (localRes.isFailure) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(localRes.exceptionOrNull()?.message ?: "No se pudo activar Seguime")
+            }
+            return
+        }
+
+        val newId = localRes.getOrNull()!!
+        activeSeguimeSessionId = newId
+        val hasNetworkNow = OfflineAlertQueue.isNetworkAvailable(context)
+        seguimePendingOfflineSync = true
+
+        // Sync to Firestore on a process-safe background scope so opening WhatsApp or changing tabs never cancels upload
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            val synced = seguimeRepo.syncSessionToCloudNow(
+                sessionId = newId,
+                latitude = loc.latitude,
+                longitude = loc.longitude,
+                speedKmH = loc.speedKmH,
+                heading = loc.heading,
+                destinationTitle = destTitle
             )
-            isStartingSeguime = false
-            if (res.isSuccess) {
-                val newId = res.getOrNull()!!
-                activeSeguimeSessionId = newId
-                shareSeguimeLink(newId)
-                val offlineNote = if (seguimeRepo.hasPendingOfflineSync()) {
-                    " (sin señal: actualizará al volver 4G)"
-                } else ""
-                snackbarHostState.showSnackbar("📍 Seguime activado$offlineNote")
-            } else {
-                snackbarHostState.showSnackbar(res.exceptionOrNull()?.message ?: "No se pudo activar Seguime")
+            coroutineScope.launch {
+                seguimePendingOfflineSync = !synced && seguimeRepo.hasPendingOfflineSync()
+            }
+        }
+
+        if (hasNetworkNow) {
+            shareSeguimeLink(newId)
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("📍 Seguime activado y listo para compartir")
+            }
+        } else {
+            showSeguimeManageDialog = true
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("📍 Seguime activado sin datos: subirá al volver 4G o podés enviar GPS por SMS")
             }
         }
     }
@@ -371,6 +444,7 @@ fun MapScreen(
                 heading = loc.heading,
                 destinationTitle = selectedDestination?.title
             )
+            seguimePendingOfflineSync = seguimeRepo.hasPendingOfflineSync()
             delay(12_000L)
         }
     }
@@ -2158,11 +2232,33 @@ fun MapScreen(
                     )
                 },
                 text = {
+                    val isPendingSync = seguimePendingOfflineSync || seguimeRepo.hasPendingOfflineSync()
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(
+                            color = if (isPendingSync) Amber400.copy(alpha = 0.14f) else SafetyGreen500.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isPendingSync) Amber400.copy(alpha = 0.6f) else SafetyGreen500.copy(alpha = 0.6f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = if (isPendingSync) {
+                                    "📡 Sin datos o sincronizando: tu viaje ya está activo y subirá tu posición apenas tengas 4G/Wi-Fi. Si hay señal telefónica sin internet, usá SMS."
+                                } else {
+                                    "🟢 Conectado en tiempo real: quien abra tu enlace con internet puede ver tu ubicación en vivo."
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isPendingSync) Amber400 else SafetyGreen500,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                            )
+                        }
                         Text(
                             text = "Tu familia o contacto de confianza puede ver tu recorrido en tiempo real desde el enlace privado." +
                                 (selectedDestination?.title?.let { "\n\n🎯 Destino: $it" } ?: "") +
-                                "\n\n📡 En tramos rurales sin señal, el enlace muestra tu última posición GPS y actualiza al volver cobertura 4G.",
+                                "\n\n📡 Quien abre el link web necesita datos/Wi-Fi. En pozos negros sin 4G tu celular guarda la ruta y actualiza al volver cobertura.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.85f)
                         )
@@ -2182,10 +2278,25 @@ fun MapScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Reenviar Link por WhatsApp", fontWeight = FontWeight.Black)
                         }
+                        OutlinedButton(
+                            onClick = {
+                                showSeguimeManageDialog = false
+                                shareSeguimeViaSms(activeSessionId)
+                            },
+                            border = BorderStroke(1.dp, Amber400.copy(alpha = 0.75f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Amber400),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("seguime_sms_btn")
+                        ) {
+                            Icon(Icons.Default.Sms, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Enviar GPS por SMS (sin datos)", fontWeight = FontWeight.Bold)
+                        }
                         Button(
                             onClick = {
                                 showSeguimeManageDialog = false
                                 activeSeguimeSessionId = null
+                                seguimePendingOfflineSync = false
                                 coroutineScope.launch {
                                     seguimeRepo.finishSession(
                                         sessionId = activeSessionId,
@@ -2220,6 +2331,7 @@ fun MapScreen(
                         onClick = {
                             showSeguimeManageDialog = false
                             activeSeguimeSessionId = null
+                            seguimePendingOfflineSync = false
                             coroutineScope.launch {
                                 seguimeRepo.finishSession(
                                     sessionId = activeSessionId,
@@ -2247,6 +2359,7 @@ fun MapScreen(
                             showExitTripDialog = false
                             val closingSeguimeId = activeSeguimeSessionId
                             activeSeguimeSessionId = null
+                            seguimePendingOfflineSync = false
                             coroutineScope.launch {
                                 if (closingSeguimeId != null) {
                                     kotlinx.coroutines.withTimeoutOrNull(1800L) {
